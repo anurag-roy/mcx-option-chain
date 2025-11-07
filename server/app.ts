@@ -6,7 +6,6 @@ import { httpLogger } from '@server/middlewares/http-logger';
 import { userRoute } from '@server/routes/user';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { rootRoute } from './routes/root';
 
 const app = new Hono();
 
@@ -16,7 +15,6 @@ app.use('*', httpLogger());
 
 const apiRoutes = app
   .basePath('/api')
-  .route('/', rootRoute)
   .route('/user', userRoute)
   .get(
     '/ws',

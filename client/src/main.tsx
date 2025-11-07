@@ -1,7 +1,7 @@
 import { DisplayError } from '@client/components/error';
 import { DisplayLoading } from '@client/components/loading';
 import { NotFound } from '@client/components/not-found';
-import { ThemeProvider } from '@client/components/theme-provider';
+import { ThemeProvider } from '@client/components/theme/theme-provider';
 import { routeTree } from '@client/routeTree.gen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
@@ -28,7 +28,7 @@ declare module '@tanstack/react-router' {
   }
 }
 
-function App() {
+export function App() {
   return (
     <ThemeProvider defaultTheme='dark'>
       <QueryClientProvider client={queryClient}>

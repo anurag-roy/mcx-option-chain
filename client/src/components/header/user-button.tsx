@@ -1,4 +1,4 @@
-import { useTheme } from '@client/components/theme-provider';
+import { useTheme } from '@client/components/theme/theme-provider';
 import { Avatar, AvatarFallback } from '@client/components/ui/avatar';
 import {
   DropdownMenu,

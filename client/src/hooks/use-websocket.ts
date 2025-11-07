@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 type SpreadsData = {
@@ -38,7 +38,7 @@ export function useWebSocket() {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
 
-  const connect = () => {
+  const connect = useCallback(() => {
     try {
       // Use the Hono RPC client to get the WebSocket URL
       const wsUrl = new URL('/api/ws', window.location.href);
@@ -95,7 +95,7 @@ export function useWebSocket() {
           const delay = Math.min(baseDelay * Math.pow(2, reconnectAttemptsRef.current), 30000);
           reconnectAttemptsRef.current++;
 
-          reconnectTimeoutRef.current = setTimeout(() => {
+          reconnectTimeoutRef.current = window.setTimeout(() => {
             console.log(`Attempting to reconnect (attempt ${reconnectAttemptsRef.current}/${maxAttempts})`);
             connect();
           }, delay);
@@ -113,9 +113,9 @@ export function useWebSocket() {
       console.error('Failed to create WebSocket connection:', error);
       toast.error('Failed to create WebSocket connection');
     }
-  };
+  }, []);
 
-  const disconnect = () => {
+  const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -133,7 +133,7 @@ export function useWebSocket() {
       orderPlaced: false,
       entryPrice: null,
     });
-  };
+  }, []);
 
   useEffect(() => {
     connect();
@@ -141,7 +141,7 @@ export function useWebSocket() {
     return () => {
       disconnect();
     };
-  }, []);
+  }, [connect, disconnect]);
 
   return {
     spreadsData,
