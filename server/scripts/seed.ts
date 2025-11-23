@@ -2,41 +2,47 @@ import { db } from '@server/db';
 import { instruments } from '@server/db/schema';
 import { logger } from '@server/lib/logger';
 import { kiteService } from '@server/lib/services/kite';
+import { VIX_MAP } from '@server/shared/config';
+import { chunk } from 'es-toolkit';
 
-const nseInstruments = await kiteService.getInstruments(['NSE']);
-const nifty = nseInstruments.find((instrument) => instrument.tradingsymbol === 'NIFTY 50');
+const CHUNK_SIZE = 1_000;
+const underlyingSymbols = Object.keys(VIX_MAP);
+const instrumentTypes = ['CE', 'PE'];
 
-if (!nifty) {
-  logger.error('NIFTY 50 instrument not found');
-  process.exit(1);
-}
-
-const nfoInstruments = await kiteService.getInstruments(['NFO']);
-const niftyOptions = nfoInstruments.filter(
-  (instrument) => instrument.name === 'NIFTY' && ['CE', 'PE'].includes(instrument.instrument_type)
+const mcxInstruments = await kiteService.getInstruments(['MCX']);
+const validInstruments = mcxInstruments.filter(
+  (instrument) =>
+    instrument.instrument_token &&
+    underlyingSymbols.includes(instrument.name) &&
+    instrumentTypes.includes(instrument.instrument_type)
 );
 
-const combinedInstruments = [nifty, ...niftyOptions];
+logger.info(`Seeding ${validInstruments.length} MCX instruments`);
 
-logger.info(`Seeding NIFTY 50 instruments`);
+const instrumentsData = validInstruments.map((instrument) => ({
+  instrumentToken: Number(instrument.instrument_token),
+  exchangeToken: instrument.exchange_token,
+  tradingsymbol: instrument.tradingsymbol,
+  name: instrument.name,
+  expiry: instrument.expiry ? instrument.expiry.toISOString().split('T')[0] : null,
+  strike: instrument.strike,
+  tickSize: instrument.tick_size,
+  lotSize: instrument.lot_size,
+  instrumentType: instrument.instrument_type,
+  segment: instrument.segment,
+  exchange: instrument.exchange,
+}));
+
+const chunks = chunk(instrumentsData, CHUNK_SIZE);
 
 await db.transaction(async (tx) => {
   await tx.delete(instruments);
-  await tx.insert(instruments).values(
-    combinedInstruments.map((instrument) => ({
-      instrumentToken: Number(instrument.instrument_token),
-      exchangeToken: instrument.exchange_token,
-      tradingsymbol: instrument.tradingsymbol,
-      name: instrument.name,
-      expiry: instrument.expiry ? instrument.expiry.toISOString().split('T')[0] : null,
-      strike: instrument.strike,
-      tickSize: instrument.tick_size,
-      lotSize: instrument.lot_size,
-      instrumentType: instrument.instrument_type,
-      segment: instrument.segment,
-      exchange: instrument.exchange,
-    }))
-  );
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]!;
+    logger.info(`Inserting chunk ${i + 1}/${chunks.length} (${chunk.length} instruments)`);
+    await tx.insert(instruments).values(chunk);
+  }
 });
 
-logger.info(`Seeded ${combinedInstruments.length} NIFTY 50 instruments`);
+logger.info(`Seeded ${validInstruments.length} MCX instruments`);
