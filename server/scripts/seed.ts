@@ -1,48 +1,94 @@
 import { db } from '@server/db';
-import { instruments } from '@server/db/schema';
+import { holidaysTable, instrumentsTable } from '@server/db/schema';
 import { logger } from '@server/lib/logger';
 import { kiteService } from '@server/lib/services/kite';
 import { VIX_MAP } from '@server/shared/config';
+import { format, parse } from 'date-fns';
 import { chunk } from 'es-toolkit';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const CHUNK_SIZE = 1_000;
-const underlyingSymbols = Object.keys(VIX_MAP);
-const instrumentTypes = ['CE', 'PE'];
+async function seedInstruments() {
+  const CHUNK_SIZE = 1_000;
+  const underlyingSymbols = Object.keys(VIX_MAP);
+  const instrumentTypes = ['CE', 'PE'];
 
-const mcxInstruments = await kiteService.getInstruments(['MCX']);
-const validInstruments = mcxInstruments.filter(
-  (instrument) =>
-    instrument.instrument_token &&
-    underlyingSymbols.includes(instrument.name) &&
-    instrumentTypes.includes(instrument.instrument_type)
-);
+  const mcxInstruments = await kiteService.getInstruments(['MCX']);
+  const validInstruments = mcxInstruments.filter(
+    (instrument) =>
+      instrument.instrument_token &&
+      underlyingSymbols.includes(instrument.name) &&
+      instrumentTypes.includes(instrument.instrument_type)
+  );
 
-logger.info(`Seeding ${validInstruments.length} MCX instruments`);
+  logger.info(`Seeding ${validInstruments.length} MCX instruments`);
 
-const instrumentsData = validInstruments.map((instrument) => ({
-  instrumentToken: Number(instrument.instrument_token),
-  exchangeToken: instrument.exchange_token,
-  tradingsymbol: instrument.tradingsymbol,
-  name: instrument.name,
-  expiry: instrument.expiry ? instrument.expiry.toISOString().split('T')[0] : null,
-  strike: instrument.strike,
-  tickSize: instrument.tick_size,
-  lotSize: instrument.lot_size,
-  instrumentType: instrument.instrument_type,
-  segment: instrument.segment,
-  exchange: instrument.exchange,
-}));
+  const instrumentsData = validInstruments.map((instrument) => ({
+    instrumentToken: Number(instrument.instrument_token),
+    exchangeToken: instrument.exchange_token,
+    tradingsymbol: instrument.tradingsymbol,
+    name: instrument.name,
+    expiry: instrument.expiry ? instrument.expiry.toISOString().split('T')[0] : null,
+    strike: instrument.strike,
+    tickSize: instrument.tick_size,
+    lotSize: instrument.lot_size,
+    instrumentType: instrument.instrument_type,
+    segment: instrument.segment,
+    exchange: instrument.exchange,
+  }));
 
-const chunks = chunk(instrumentsData, CHUNK_SIZE);
+  const chunks = chunk(instrumentsData, CHUNK_SIZE);
 
-await db.transaction(async (tx) => {
-  await tx.delete(instruments);
+  await db.transaction(async (tx) => {
+    await tx.delete(instrumentsTable);
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i]!;
-    logger.info(`Inserting chunk ${i + 1}/${chunks.length} (${chunk.length} instruments)`);
-    await tx.insert(instruments).values(chunk);
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]!;
+      logger.info(`Inserting chunk ${i + 1}/${chunks.length} (${chunk.length} instruments)`);
+      await tx.insert(instrumentsTable).values(chunk);
+    }
+  });
+
+  logger.info(`Seeded ${validInstruments.length} MCX instruments`);
+}
+
+async function seedHolidays() {
+  // Read the CSV file
+  const csvPath = join(process.cwd(), '.data', 'holidays.csv');
+  const csvContent = readFileSync(csvPath, 'utf-8');
+
+  // Parse CSV (skip header)
+  const lines = csvContent.trim().split('\n').slice(1);
+  const holidaysData: (typeof holidaysTable.$inferInsert)[] = [];
+
+  for (const line of lines) {
+    const [dateStr, name] = line.split(',');
+    if (!dateStr || !name) continue;
+
+    // Parse the date from DD-MMM-YYYY format to proper Date
+    const parsedDate = parse(dateStr, 'dd-MMM-yyyy', new Date());
+
+    // Format as YYYY-MM-DD for database storage
+    const formattedDate = format(parsedDate, 'yyyy-MM-dd');
+
+    holidaysData.push({
+      date: formattedDate,
+      name: name.trim(),
+      year: parsedDate.getFullYear(),
+      month: parsedDate.getMonth() + 1, // getMonth() returns 0-11
+      day: parsedDate.getDate(),
+    });
   }
-});
 
-logger.info(`Seeded ${validInstruments.length} MCX instruments`);
+  logger.info(`Seeding ${holidaysData.length} holidays`);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(holidaysTable);
+    await tx.insert(holidaysTable).values(holidaysData);
+  });
+
+  logger.info(`Seeded ${holidaysData.length} holidays`);
+}
+
+await seedInstruments();
+await seedHolidays();

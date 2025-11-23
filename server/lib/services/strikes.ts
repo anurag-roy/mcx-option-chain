@@ -1,5 +1,5 @@
 import { db } from '@server/db';
-import { instruments } from '@server/db/schema';
+import { instrumentsTable } from '@server/db/schema';
 import { logger } from '@server/lib/logger';
 import type { StrikeTokensMap } from '@server/types/types';
 import { inArray } from 'drizzle-orm';
@@ -20,8 +20,8 @@ class StrikesService {
     logger.info('Initializing expiries and strikes');
     const allOptions = await db
       .select()
-      .from(instruments)
-      .where(inArray(instruments.instrumentType, ['CE', 'PE']));
+      .from(instrumentsTable)
+      .where(inArray(instrumentsTable.instrumentType, ['CE', 'PE']));
 
     for (const option of allOptions) {
       const expiry = option.expiry;

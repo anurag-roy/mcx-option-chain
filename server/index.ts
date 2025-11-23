@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server';
 import app, { injectWebSocket } from '@server/app';
 import { db } from '@server/db';
-import { instruments } from '@server/db/schema';
+import { instrumentsTable } from '@server/db/schema';
 import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
 import { kiteService } from '@server/lib/services/kite';
@@ -17,7 +17,11 @@ try {
   process.exit(1);
 }
 
-const [niftyToken] = await db.select().from(instruments).where(eq(instruments.tradingsymbol, 'NIFTY 50')).limit(1);
+const [niftyToken] = await db
+  .select()
+  .from(instrumentsTable)
+  .where(eq(instrumentsTable.tradingsymbol, 'NIFTY 50'))
+  .limit(1);
 if (!niftyToken) {
   logger.error('NIFTY 50 instrument not found. Please run `npm run seed` to seed the database.');
   process.exit(1);

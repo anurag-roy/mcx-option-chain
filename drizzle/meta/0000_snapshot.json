@@ -1,9 +1,77 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "798ade9e-399f-4607-9662-dbe82025587f",
+  "id": "94a24fad-908a-430a-811c-6fbfd479c2e8",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
+    "holidays": {
+      "name": "holidays",
+      "columns": {
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "year": {
+          "name": "year",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "month": {
+          "name": "month",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "day": {
+          "name": "day",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "holidays_year_idx": {
+          "name": "holidays_year_idx",
+          "columns": [
+            "year"
+          ],
+          "isUnique": false
+        },
+        "holidays_month_idx": {
+          "name": "holidays_month_idx",
+          "columns": [
+            "month"
+          ],
+          "isUnique": false
+        },
+        "holidays_year_month_idx": {
+          "name": "holidays_year_month_idx",
+          "columns": [
+            "year",
+            "month"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "instruments": {
       "name": "instruments",
       "columns": {
@@ -85,7 +153,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "name_idx": {
+          "name": "name_idx",
+          "columns": [
+            "name"
+          ],
+          "isUnique": false
+        },
+        "expiry_idx": {
+          "name": "expiry_idx",
+          "columns": [
+            "expiry"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
