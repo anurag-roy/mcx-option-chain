@@ -130,7 +130,7 @@ class TickerService {
       // If av exists, dv should also exist
       instrument.dv = volatilityService.values[instrument.name]?.dv!;
 
-      instrument.underlyingLtp = this.futureLtps[instrument.name]![instrument.expiry]!;
+      instrument.underlyingLtp = this.futureLtps[instrument.name]![instrument.futExpiry]!;
       instrument.sellValue = (instrument.bid - 0.05) * instrument.lotSize!;
       instrument.strikePosition =
         (Math.abs(instrument.strike! - instrument.underlyingLtp) * 100) / instrument.underlyingLtp;
@@ -169,7 +169,14 @@ class TickerService {
     this.expiry = expiry;
     this.sdMultiplier = sdMultiplier;
 
-    const ltp = this.futureLtps[underlying]?.[expiry];
+    const [futExpiry] = Object.keys(this.futureLtps[underlying]!)
+      .filter((e) => e > expiry)
+      .sort();
+    if (!futExpiry) {
+      throw new HTTPException(400, { message: `No future expiry found for ${underlying} ${expiry}` });
+    }
+
+    const ltp = this.futureLtps[underlying]?.[futExpiry];
     if (!ltp) {
       throw new HTTPException(400, { message: `LTP not found for ${underlying} ${expiry}` });
     }
@@ -259,7 +266,8 @@ class TickerService {
     for (const instrument of filteredInstruments) {
       this.optionChain[instrument.instrumentToken] = {
         ...instrument,
-        underlyingLtp: 0,
+        futExpiry,
+        underlyingLtp: ltp,
         bid: 0,
         sellValue: 0,
         strikePosition: 0,

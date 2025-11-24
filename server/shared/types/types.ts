@@ -3,7 +3,11 @@ import type { instrumentsTable } from '@server/db/schema';
 type Instrument = typeof instrumentsTable.$inferSelect;
 export type OptionChain = Instrument & {
   /**
-   * LTP of the corresponding FUT
+   * Expiry of the corresponding FUT
+   */
+  futExpiry: string;
+  /**
+   * LTP of the FUT
    */
   underlyingLtp: number;
   bid: number;
