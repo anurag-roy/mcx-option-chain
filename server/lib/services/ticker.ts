@@ -1,29 +1,18 @@
+import { db } from '@server/db';
+import { instrumentsTable } from '@server/db/schema';
 import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
 import { accessToken } from '@server/lib/services/accessToken';
-import { kiteService } from '@server/lib/services/kite';
-import { strikesService } from '@server/lib/services/strikes';
-import type { StrikeTokensMap } from '@server/types/types';
+import { volatilityService } from '@server/lib/services/volatility';
+import { calculateDeltas } from '@server/lib/utils/delta';
+import { workingDaysCache } from '@server/lib/working-days-cache';
+import type { OptionChain } from '@shared/types/types';
+import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { HTTPException } from 'hono/http-exception';
 import type { WSContext } from 'hono/ws';
 import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
 
-type StrikeTokensMapOptional = {
-  [K in keyof StrikeTokensMap]: StrikeTokensMap[K] | undefined;
-};
-
 class TickerService {
-  NIFTY_TOKEN!: number;
-  NIFTY_PRICE = 0;
-  LOT_SIZE = 75;
-
-  // Order monitoring configuration
-  private readonly PRICE_RANGE_OFFSET = 5; // Configurable range offset
-
-  // Order monitoring state
-  private entryPrice: number | null = null;
-  private ordersEnabled: boolean = false;
-  private orderPlaced: boolean = false;
-
   private ticker = new KiteTicker({
     api_key: env.KITE_API_KEY,
     access_token: accessToken,
@@ -31,14 +20,19 @@ class TickerService {
   private client: WSContext | null = null;
   private subscribedTokens = new Set<number>();
 
+  /**
+   * token to underlying and expiry
+   */
+  private futureTokensMap: Record<number, { underlying: string; expiry: string }> = {};
+  /**
+   * underlying to expiry to ltp
+   */
+  private futureLtps: Record<string, Record<string, number>> = {};
+
+  private underlying: string | null = null;
   private expiry: string | null = null;
-  public strikeTokensMap: StrikeTokensMapOptional = {
-    ceMinus: undefined,
-    cePlus: undefined,
-    peMinus: undefined,
-    pePlus: undefined,
-  };
-  private bidAskMap: Record<string, { bid: number; ask: number }> = {};
+  private sdMultiplier: number | null = null;
+  private optionChain: Record<number, OptionChain> = {};
 
   private subscribeToTokens(tokens: number[]) {
     for (const token of tokens) {
@@ -58,56 +52,23 @@ class TickerService {
     this.ticker.unsubscribe([...tokens]);
   }
 
-  private calculateSpreads() {
-    if (
-      !this.strikeTokensMap.ceMinus ||
-      !this.strikeTokensMap.cePlus ||
-      !this.strikeTokensMap.peMinus ||
-      !this.strikeTokensMap.pePlus
-    ) {
-      return;
+  async init() {
+    logger.info('Loading futures data');
+    const futures = await db
+      .select()
+      .from(instrumentsTable)
+      .where(and(eq(instrumentsTable.instrumentType, 'FUT'), isNotNull(instrumentsTable.expiry)));
+    for (const future of futures) {
+      this.futureTokensMap[future.instrumentToken] = { underlying: future.name, expiry: future.expiry };
+      if (!this.futureLtps[future.name]) {
+        this.futureLtps[future.name] = {};
+      }
+      this.futureLtps[future.name]![future.expiry] = 0;
     }
-
-    // Put calculations
-    const peSpreadWidth = this.strikeTokensMap.pePlus.strike - this.strikeTokensMap.peMinus.strike;
-
-    const pePlusAsk = this.bidAskMap[this.strikeTokensMap.pePlus.token]?.ask || 0;
-    const peMinusBid = this.bidAskMap[this.strikeTokensMap.peMinus.token]?.bid || 0;
-    const peNetDebit = pePlusAsk - peMinusBid;
-
-    const peMaxProfit = (peSpreadWidth - peNetDebit) * this.LOT_SIZE;
-    const peMaxLoss = peNetDebit * this.LOT_SIZE;
-    const peBreakEven = this.strikeTokensMap.pePlus.strike - peNetDebit;
-
-    // Call calculations
-    const ceSpreadWidth = this.strikeTokensMap.cePlus.strike - this.strikeTokensMap.ceMinus.strike;
-
-    const cePlusAsk = this.bidAskMap[this.strikeTokensMap.cePlus.token]?.ask || 0;
-    const ceMinusBid = this.bidAskMap[this.strikeTokensMap.ceMinus.token]?.bid || 0;
-    const ceNetCredit = ceMinusBid - cePlusAsk;
-
-    const ceMaxProfit = ceNetCredit * this.LOT_SIZE;
-    const ceMaxLoss = (ceSpreadWidth - ceNetCredit) * this.LOT_SIZE;
-    const ceBreakEven = this.strikeTokensMap.ceMinus.strike + ceNetCredit;
-
-    return {
-      callSpread: {
-        maxProfit: ceMaxProfit,
-        maxLoss: ceMaxLoss,
-        creditOrDebit: ceNetCredit,
-        breakEven: ceBreakEven,
-      },
-      putSpread: {
-        maxProfit: peMaxProfit,
-        maxLoss: peMaxLoss,
-        creditOrDebit: peNetDebit,
-        breakEven: peBreakEven,
-      },
-    };
-  }
-
-  async init(niftyToken: number) {
-    this.NIFTY_TOKEN = niftyToken;
+    logger.info('Loaded futures data');
+    logger.info('Futures data', futures);
+    logger.info('Future tokens map', this.futureTokensMap);
+    logger.info('Future ltps', this.futureLtps);
 
     logger.info('Connecting to Kite Ticker');
     await new Promise((resolve, reject) => {
@@ -131,55 +92,187 @@ class TickerService {
 
     this.ticker.on('ticks', (ticks: (TickLtp | TickFull)[]) => {
       for (const tick of ticks) {
-        if (tick.instrument_token === this.NIFTY_TOKEN) {
-          this.updateNiftyPrice(tick.last_price);
+        if (tick.instrument_token in this.futureTokensMap) {
+          const { underlying, expiry } = this.futureTokensMap[tick.instrument_token]!;
+          this.futureLtps[underlying]![expiry] = tick.last_price;
+          // TODO: If FUT ltp changes, check if ATM is changed or not
         } else if (tick.mode === 'full') {
-          if (!this.bidAskMap[tick.instrument_token]) {
-            this.bidAskMap[tick.instrument_token] = { bid: 0, ask: 0 };
+          const instrument = this.optionChain[tick.instrument_token];
+          if (!instrument) {
+            continue;
           }
-          this.bidAskMap[tick.instrument_token]!.bid = tick.depth?.buy[0]?.price ?? 0;
-          this.bidAskMap[tick.instrument_token]!.ask = tick.depth?.sell[0]?.price ?? 0;
+
+          instrument.bid = tick.depth?.buy[0]?.price ?? 0;
         }
       }
     });
 
     setInterval(() => {
-      const spreads = this.calculateSpreads();
-      if (spreads && this.client) {
-        this.client.send(JSON.stringify({ type: 'spreads', data: spreads }));
+      this.calculateOptions();
+      if (this.optionChain && this.client) {
+        this.client.send(JSON.stringify({ type: 'optionChain', data: this.optionChain }));
       }
     }, 250);
+
+    this.ticker.setMode(
+      'ltp',
+      futures.map((f) => f.instrumentToken)
+    );
   }
 
-  public subscribeToNifty() {
-    this.ticker.setMode('ltp', [this.NIFTY_TOKEN]);
-  }
+  private async calculateOptions() {
+    for (const instrument of Object.values(this.optionChain)) {
+      const av = volatilityService.values[instrument.name]?.av;
+      if (!av) {
+        continue;
+      }
+      instrument.av = av;
+      // If av exists, dv should also exist
+      instrument.dv = volatilityService.values[instrument.name]?.dv!;
 
-  public updateNiftyPrice(price: number) {
-    this.NIFTY_PRICE = price;
+      instrument.underlyingLtp = this.futureLtps[instrument.name]![instrument.expiry]!;
+      instrument.sellValue = (instrument.bid - 0.05) * instrument.lotSize!;
+      instrument.strikePosition =
+        (Math.abs(instrument.strike! - instrument.underlyingLtp) * 100) / instrument.underlyingLtp;
 
-    // Check order conditions
-    this.checkOrderConditions();
+      instrument.sd = await workingDaysCache.calculateSD(av, instrument.expiry);
 
-    if (
-      this.expiry &&
-      this.strikeTokensMap.ceMinus &&
-      this.strikeTokensMap.cePlus &&
-      (this.NIFTY_PRICE < this.strikeTokensMap.ceMinus.strike || this.NIFTY_PRICE > this.strikeTokensMap.cePlus.strike)
-    ) {
-      this.subscribe(this.expiry);
+      // Calculate new sigma values
+      const sigmas = await workingDaysCache.calculateAllSigmas(
+        av,
+        1, // Use base multiplier of 1 for individual instruments (multiplier applied at bounds level)
+        instrument.expiry,
+        instrument.instrumentType as 'CE' | 'PE'
+      );
+
+      instrument.sigmaN = sigmas.sigmaN;
+      instrument.sigmaX = sigmas.sigmaX;
+      instrument.sigmaXI = sigmas.sigmaXI;
+
+      // Calculate delta using Black-Scholes
+      const workingDaysTillExpiry = await workingDaysCache.getWorkingDaysTillExpiry(instrument.expiry);
+      const workingDaysInLastYear = await workingDaysCache.getWorkingDaysInLastYear();
+      const T = workingDaysTillExpiry / workingDaysInLastYear;
+
+      instrument.delta = calculateDeltas(
+        instrument.underlyingLtp,
+        instrument.strike!,
+        av,
+        T,
+        instrument.instrumentType as 'CE' | 'PE'
+      );
     }
   }
 
-  public subscribe(expiry: string) {
+  public async subscribe(underlying: string, expiry: string, sdMultiplier: number) {
+    this.underlying = underlying;
     this.expiry = expiry;
+    this.sdMultiplier = sdMultiplier;
 
-    const atm = tickerService.NIFTY_PRICE;
-    const map = strikesService.getStrikesForExpiry(expiry, atm);
-    this.strikeTokensMap = map;
+    const ltp = this.futureLtps[underlying]?.[expiry];
+    if (!ltp) {
+      throw new HTTPException(400, { message: `LTP not found for ${underlying} ${expiry}` });
+    }
+
+    let ceBound = ltp;
+    let peBound = ltp;
+
+    const av = volatilityService.values[underlying]?.av;
+    if (av) {
+      try {
+        // Calculate sigmas for both CE and PE
+        const ceSigmas = await workingDaysCache.calculateAllSigmas(av, sdMultiplier, expiry, 'CE');
+
+        // Calculate asymmetric bounds
+        // For CE: Ceiling = LTP + (σₓᵢ %)
+        ceBound = ltp + (ltp * ceSigmas.sigmaXI) / 100;
+
+        // For PE: Floor = LTP - (σₓᵢ %)
+        peBound = ltp - (ltp * ceSigmas.sigmaXI) / 100;
+
+        logger.info(
+          `LTP: ${ltp}, AV: ${av}, sdMultiplier: ${sdMultiplier}`,
+          `\nCE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`,
+          `\nPE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`,
+          `\nCE Bound (ceiling): ${ceBound.toFixed(2)}, PE Bound (floor): ${peBound.toFixed(2)}`
+        );
+      } catch (error) {
+        logger.error(`Error calculating sigmas for stock ${underlying} ${expiry}:`, error);
+        // Fallback to LTP if calculation fails
+        ceBound = ltp;
+        peBound = ltp;
+      }
+    }
+
+    // New asymmetric sigma-based filtering logic
+    // Get all available strikes for PUTs and CALLs
+    const options = await db
+      .select()
+      .from(instrumentsTable)
+      .where(
+        and(
+          eq(instrumentsTable.name, underlying),
+          inArray(instrumentsTable.instrumentType, ['CE', 'PE']),
+          eq(instrumentsTable.expiry, expiry)
+        )
+      )
+      .orderBy(asc(instrumentsTable.strike));
+
+    const putStrikes = options
+      .filter((s) => s.instrumentType === 'PE')
+      .map((s) => s.strike!)
+      .sort((a, b) => b - a); // Sort descending for PUTs
+
+    const callStrikes = options
+      .filter((s) => s.instrumentType === 'CE')
+      .map((s) => s.strike!)
+      .sort((a, b) => a - b); // Sort ascending for CALLs
+
+    // Find closest floor strike to PE floor bound
+    const closestFloorStrike = putStrikes.find((strike) => strike <= peBound) || putStrikes[putStrikes.length - 1];
+
+    // Find closest ceiling strike to CE ceiling bound
+    const closestCeilingStrike = callStrikes.find((strike) => strike >= ceBound) || callStrikes[callStrikes.length - 1];
+
+    logger.info(
+      `Asymmetric filtering: PE floor=${peBound.toFixed(2)}, CE ceiling=${ceBound.toFixed(2)}, closestFloorStrike=${closestFloorStrike}, closestCeilingStrike=${closestCeilingStrike}`
+    );
+
+    // Filter instruments based on asymmetric logic
+    const filteredInstruments = options.filter((s) => {
+      if (s.instrumentType === 'PE') {
+        // Get all PUTs with strikes below (and including) the closest floor strike
+        return s.strike! <= closestFloorStrike!;
+      } else if (s.instrumentType === 'CE') {
+        // Get all CALLs with strikes above (and including) the closest ceiling strike
+        return s.strike! >= closestCeilingStrike!;
+      }
+      return false;
+    });
+
+    logger.info(`Filtered ${filteredInstruments.length} instruments out of ${options.length} total`);
 
     this.unsubscribeFromTokens();
-    this.subscribeToTokens([map.ceMinus.token, map.cePlus.token, map.peMinus.token, map.pePlus.token]);
+    this.subscribeToTokens(filteredInstruments.map((s) => s.instrumentToken));
+
+    this.optionChain = {};
+    for (const instrument of filteredInstruments) {
+      this.optionChain[instrument.instrumentToken] = {
+        ...instrument,
+        underlyingLtp: 0,
+        bid: 0,
+        sellValue: 0,
+        strikePosition: 0,
+        returnValue: 0,
+        sd: 0,
+        sigmaN: 0,
+        sigmaX: 0,
+        sigmaXI: 0,
+        delta: 0,
+        av: 0,
+        dv: 0,
+      };
+    }
   }
 
   public addClient(client: WSContext) {
@@ -195,116 +288,6 @@ class TickerService {
 
   public async disconnect() {
     this.ticker.disconnect();
-  }
-
-  // Order monitoring methods
-  public setEntryPrice(price: number) {
-    this.entryPrice = price;
-    logger.info(`Entry price set to: ${price}`);
-
-    // Send order status update to client
-    this.sendOrderStatusUpdate();
-  }
-
-  public setOrdersEnabled(enabled: boolean) {
-    this.ordersEnabled = enabled;
-
-    // Reset order placed flag when enabling orders
-    if (enabled) {
-      this.orderPlaced = false;
-    }
-
-    logger.info(`Orders ${enabled ? 'enabled' : 'disabled'}`);
-
-    // Send order status update to client
-    this.sendOrderStatusUpdate();
-  }
-
-  private checkOrderConditions() {
-    if (!this.ordersEnabled || !this.entryPrice || this.orderPlaced) {
-      return;
-    }
-
-    const minPrice = this.entryPrice - this.PRICE_RANGE_OFFSET;
-    const maxPrice = this.entryPrice + this.PRICE_RANGE_OFFSET;
-
-    if (this.NIFTY_PRICE >= minPrice && this.NIFTY_PRICE <= maxPrice) {
-      logger.info(`Nifty price ${this.NIFTY_PRICE} is within range [${minPrice}, ${maxPrice}]. Placing order...`);
-      this.placeOrder();
-    }
-  }
-
-  private async placeOrder() {
-    try {
-      // Mark order as placed immediately to prevent multiple orders
-      this.orderPlaced = true;
-      this.ordersEnabled = false; // Turn off monitoring after order placement
-
-      const spreads = this.calculateSpreads();
-      if (!spreads) {
-        logger.error('No spreads found');
-        this.sendOrderStatusUpdate(false, 'No spreads found');
-        return;
-      }
-
-      const ceMaxLoss = spreads.callSpread.maxLoss;
-      const peMaxLoss = spreads.putSpread.maxLoss;
-      const prefix = ceMaxLoss < peMaxLoss ? 'ce' : 'pe';
-
-      const minusTradingSymbol = this.strikeTokensMap[`${prefix}Minus`]?.tradingSymbol;
-      const plusTradingSymbol = this.strikeTokensMap[`${prefix}Plus`]?.tradingSymbol;
-
-      if (!minusTradingSymbol || !plusTradingSymbol) {
-        logger.error('No trading symbols found');
-        this.sendOrderStatusUpdate(false, 'No trading symbols found');
-        return;
-      }
-
-      const orderResponses = await Promise.all([
-        kiteService.placeOrder('regular', {
-          exchange: 'NFO',
-          order_type: 'MARKET',
-          product: 'NRML',
-          tradingsymbol: minusTradingSymbol,
-          transaction_type: 'SELL',
-          quantity: this.LOT_SIZE,
-        }),
-        kiteService.placeOrder('regular', {
-          exchange: 'NFO',
-          order_type: 'MARKET',
-          product: 'NRML',
-          tradingsymbol: plusTradingSymbol,
-          transaction_type: 'BUY',
-          quantity: this.LOT_SIZE,
-        }),
-      ]);
-
-      logger.info(`Order placed successfully:`, orderResponses);
-      this.sendOrderStatusUpdate(true, undefined);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`Order placement error: ${errorMessage}`);
-      this.sendOrderStatusUpdate(false, errorMessage);
-    }
-  }
-
-  private sendOrderStatusUpdate(success?: boolean, error?: string) {
-    if (!this.client) return;
-
-    const orderStatusData = {
-      ordersEnabled: this.ordersEnabled,
-      orderPlaced: this.orderPlaced,
-      entryPrice: this.entryPrice,
-      ...(success !== undefined && { success }),
-      ...(error && { error }),
-    };
-
-    this.client.send(
-      JSON.stringify({
-        type: 'order-status',
-        data: orderStatusData,
-      })
-    );
   }
 }
 

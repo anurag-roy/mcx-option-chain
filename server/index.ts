@@ -1,13 +1,11 @@
 import { serve } from '@hono/node-server';
 import app, { injectWebSocket } from '@server/app';
-import { db } from '@server/db';
-import { instrumentsTable } from '@server/db/schema';
 import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
 import { kiteService } from '@server/lib/services/kite';
 import { tickerService } from '@server/lib/services/ticker';
-import { eq } from 'drizzle-orm';
-import { strikesService } from './lib/services/strikes';
+import { volatilityService } from '@server/lib/services/volatility';
+import { workingDaysCache } from '@server/lib/working-days-cache';
 
 try {
   await kiteService.getProfile();
@@ -17,34 +15,29 @@ try {
   process.exit(1);
 }
 
-const [niftyToken] = await db
-  .select()
-  .from(instrumentsTable)
-  .where(eq(instrumentsTable.tradingsymbol, 'NIFTY 50'))
-  .limit(1);
-if (!niftyToken) {
-  logger.error('NIFTY 50 instrument not found. Please run `npm run seed` to seed the database.');
+try {
+  await workingDaysCache.initializeRuntimeCache();
+  logger.info('Working days cache initialized');
+} catch (error) {
+  logger.error('Failed to initialize working days cache');
   process.exit(1);
 }
 
 try {
-  await tickerService.init(niftyToken.instrumentToken);
+  await volatilityService.init();
+  logger.info('Volatility service initialized');
+} catch (error) {
+  logger.error('Failed to initialize volatility service');
+  process.exit(1);
+}
+
+try {
+  await tickerService.init();
   logger.info('Connected to Kite Ticker');
 } catch (error) {
   logger.error('Failed to connect to Kite Ticker');
   process.exit(1);
 }
-
-logger.info('Subscribing to NIFTY 50...');
-try {
-  tickerService.subscribeToNifty();
-  logger.info('Subscribed to NIFTY 50');
-} catch (error) {
-  logger.error('Failed to subscribe to NIFTY 50');
-  process.exit(1);
-}
-
-await strikesService.init();
 
 const server = serve(
   {
@@ -56,3 +49,9 @@ const server = serve(
   }
 );
 injectWebSocket(server);
+
+// Test ticker subscribe method
+setTimeout(() => {
+  logger.info('Subscribing to GOLD 2025-12-05');
+  tickerService.subscribe('GOLD', '2025-12-05', 1);
+}, 5000);

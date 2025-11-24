@@ -11,7 +11,7 @@ import { join } from 'node:path';
 async function seedInstruments() {
   const CHUNK_SIZE = 1_000;
   const underlyingSymbols = Object.keys(VIX_MAP);
-  const instrumentTypes = ['CE', 'PE'];
+  const instrumentTypes = ['FUT', 'CE', 'PE'];
 
   const mcxInstruments = await kiteService.getInstruments(['MCX']);
   const validInstruments = mcxInstruments.filter(
@@ -28,7 +28,7 @@ async function seedInstruments() {
     exchangeToken: instrument.exchange_token,
     tradingsymbol: instrument.tradingsymbol,
     name: instrument.name,
-    expiry: instrument.expiry ? instrument.expiry.toISOString().split('T')[0] : null,
+    expiry: instrument.expiry.toISOString().split('T')[0]!,
     strike: instrument.strike,
     tickSize: instrument.tick_size,
     lotSize: instrument.lot_size,

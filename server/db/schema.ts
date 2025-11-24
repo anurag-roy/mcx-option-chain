@@ -8,7 +8,7 @@ export const instrumentsTable = sqliteTable(
     exchangeToken: text().notNull(),
     tradingsymbol: text().notNull(),
     name: text().notNull(),
-    expiry: text(),
+    expiry: text().notNull(),
     strike: real(),
     tickSize: real(),
     lotSize: real(),

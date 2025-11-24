@@ -1,8 +1,12 @@
 export const VIX_MAP = {
   GOLD: '^GVZ',
+  GOLDM: '^GVZ',
   SILVER: '^VXSLV',
-  COPPER: 6.43,
+  SILVERM: '^VXSLV',
+  COPPER: 49,
   CRUDEOIL: '^OVX',
-  NATURALGAS: 20.34,
-  ZINC: 10.12,
+  CRUDEOILM: '^OVX',
+  NATURALGAS: 62,
+  NATGASMINI: 62,
+  ZINC: 25,
 };

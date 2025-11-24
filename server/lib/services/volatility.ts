@@ -4,7 +4,7 @@ import { workingDaysCache } from '@server/lib/working-days-cache';
 import { VIX_MAP } from '@server/shared/config';
 import YahooFinance from 'yahoo-finance2';
 
-const yahooFinance = new YahooFinance();
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 const getPrice = (symbol: string) =>
   yahooFinance.quoteCombine(symbol, { fields: ['regularMarketPrice'] }).then((data) => data.regularMarketPrice);
 
@@ -14,7 +14,7 @@ class VolatilityService {
   async init() {
     logger.info('Initializing volatility service');
     for (const [symbol, value] of Object.entries(VIX_MAP)) {
-      const getAv = typeof value === 'number' ? () => value : () => getPrice(symbol);
+      const getAv = typeof value === 'number' ? () => value : () => getPrice(value);
       const getDv = async (av: number) => workingDaysCache.getDvFromAv(av);
 
       setIntervalNow(async () => {
