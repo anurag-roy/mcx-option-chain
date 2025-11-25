@@ -13,6 +13,7 @@ export type OptionChain = Instrument & {
   bid: number;
   sellValue: number;
   strikePosition: number;
+  orderMargin: number;
   returnValue: number;
   sd: number;
   sigmaN: number;

@@ -15,11 +15,10 @@ class VolatilityService {
     logger.info('Initializing volatility service');
     for (const [symbol, value] of Object.entries(VIX_MAP)) {
       const getAv = typeof value === 'number' ? () => value : () => getPrice(value);
-      const getDv = async (av: number) => workingDaysCache.getDvFromAv(av);
 
       setIntervalNow(async () => {
         const av = await getAv();
-        const dv = await getDv(av);
+        const dv = workingDaysCache.getDvFromAv(av);
         this.values[symbol] = { av, dv };
       }, 1000 * 60); // 1 minute
     }

@@ -1,20 +1,25 @@
 import { db } from '@server/db';
 import { instrumentsTable } from '@server/db/schema';
 import { logger } from '@server/lib/logger';
-import { calculateMarketMinutesInRange, calculateMarketMinutesTillExpiry } from '@server/lib/utils/market-minutes';
-import { parseISO, subYears } from 'date-fns';
+import {
+  calculateMarketMinutesInRange,
+  calculateMarketMinutesTillExpiry,
+  loadHolidayCache,
+} from '@server/lib/utils/market-minutes';
+import { parse, parseISO, subYears } from 'date-fns';
 import { inArray } from 'drizzle-orm';
 
 // Cache for market minutes calculations
 class MarketMinutesCache {
   private marketMinutesInLastYear: number | null = null;
-  private expiryMinutesMap: Map<string, number> = new Map();
+  private validExpiryDates: Set<string> = new Set();
 
   /**
    * Get market minutes in the last year (T in the SD formula)
    * Calculates from 1 year ago to today and caches the result
+   * This value is static for the day, so caching is fine
    */
-  async getMarketMinutesInLastYear(): Promise<number> {
+  getMarketMinutesInLastYear(): number {
     if (this.marketMinutesInLastYear !== null) {
       return this.marketMinutesInLastYear;
     }
@@ -22,7 +27,7 @@ class MarketMinutesCache {
     const today = new Date();
     const oneYearAgo = subYears(today, 1);
 
-    this.marketMinutesInLastYear = await calculateMarketMinutesInRange(oneYearAgo, today);
+    this.marketMinutesInLastYear = calculateMarketMinutesInRange(oneYearAgo, today);
     logger.info(`Cached market minutes in last year: ${this.marketMinutesInLastYear}`);
 
     return this.marketMinutesInLastYear;
@@ -30,35 +35,45 @@ class MarketMinutesCache {
 
   /**
    * Get market minutes till expiry for a specific expiry date
-   * Caches the result for future use
+   * This is calculated fresh every time to reflect real-time remaining minutes
    */
-  async getMarketMinutesTillExpiry(expiryDate: string): Promise<number> {
-    if (this.expiryMinutesMap.has(expiryDate)) {
-      return this.expiryMinutesMap.get(expiryDate)!;
-    }
-
-    // Validate expiry date before processing
-    if (!(await this.isValidExpiryDate(expiryDate))) {
-      console.warn(`Invalid expiry date encountered: "${expiryDate}". Skipping...`);
-      this.expiryMinutesMap.set(expiryDate, 0);
+  getMarketMinutesTillExpiry(expiryDate: string): number {
+    // Validate expiry date
+    if (!this.validExpiryDates.has(expiryDate)) {
+      logger.warn(`Unknown expiry date: "${expiryDate}". Returning 0.`);
       return 0;
     }
 
-    const marketMinutes = await calculateMarketMinutesTillExpiry(expiryDate);
-    this.expiryMinutesMap.set(expiryDate, marketMinutes);
+    // Calculate fresh value every time - no caching!
+    return calculateMarketMinutesTillExpiry(expiryDate);
+  }
 
-    return marketMinutes;
+  /**
+   * Pre-validate expiry dates at startup
+   * Only stores which dates are valid, NOT the market minutes values
+   */
+  private preValidateExpiryDates(expiryDates: string[]): void {
+    logger.info(`Pre-validating ${expiryDates.length} expiry dates...`);
+
+    for (const date of expiryDates) {
+      if (this.isValidExpiryDate(date)) {
+        this.validExpiryDates.add(date);
+      } else {
+        logger.warn(`Skipping invalid expiry date: "${date}"`);
+      }
+    }
+
+    logger.info(`Validated ${this.validExpiryDates.size} expiry dates`);
   }
 
   /**
    * Validate if an expiry date string is valid
    */
-  private async isValidExpiryDate(expiryDate: string): Promise<boolean> {
+  private isValidExpiryDate(expiryDate: string): boolean {
     if (!expiryDate || typeof expiryDate !== 'string' || expiryDate.trim() === '') {
       return false;
     }
 
-    // Try to parse the date
     try {
       const trimmed = expiryDate.trim();
       let parsed: Date;
@@ -69,7 +84,6 @@ class MarketMinutesCache {
       }
       // Try Shoonya format (DD-MMM-YYYY)
       else if (trimmed.match(/^\d{2}-[A-Z]{3}-\d{4}$/)) {
-        const { parse } = await import('date-fns');
         parsed = parse(trimmed, 'dd-MMM-yyyy', new Date());
       }
       // Fallback: try native Date parsing
@@ -88,58 +102,17 @@ class MarketMinutesCache {
       const fiveYearsFromNow = new Date(now.getFullYear() + 5, now.getMonth(), now.getDate());
 
       return parsed >= oneYearAgo && parsed <= fiveYearsFromNow;
-    } catch (error) {
+    } catch {
       return false;
     }
-  }
-
-  /**
-   * Pre-populate the cache with unique expiry dates
-   * Should be called on startup with all unique expiry dates from the database
-   */
-  async prePopulateExpiryCache(uniqueExpiryDates: string[]): Promise<void> {
-    logger.info(`Pre-populating expiry cache with ${uniqueExpiryDates.length} unique expiry dates...`);
-
-    // Filter out invalid dates first
-    const validationPromises = uniqueExpiryDates.map(async (date) => {
-      const isValid = await this.isValidExpiryDate(date);
-      if (!isValid) {
-        console.warn(`Skipping invalid expiry date: "${date}"`);
-      }
-      return { date, isValid };
-    });
-
-    const validationResults = await Promise.all(validationPromises);
-    const validExpiryDates = validationResults.filter((result) => result.isValid).map((result) => result.date);
-
-    logger.info(`Found ${validExpiryDates.length} valid expiry dates out of ${uniqueExpiryDates.length} total`);
-
-    const promises = validExpiryDates.map(async (expiryDate) => {
-      try {
-        const marketMinutes = await calculateMarketMinutesTillExpiry(expiryDate);
-        this.expiryMinutesMap.set(expiryDate, marketMinutes);
-        return { expiryDate, marketMinutes, success: true };
-      } catch (error) {
-        logger.error(`Error calculating market minutes for expiry "${expiryDate}":`, error);
-        this.expiryMinutesMap.set(expiryDate, 0);
-        return { expiryDate, marketMinutes: 0, success: false };
-      }
-    });
-
-    const results = await Promise.all(promises);
-    const successful = results.filter((r) => r.success);
-    logger.info(
-      `Expiry cache populated: ${successful.length} successful, ${results.length - successful.length} failed`
-    );
-    logger.info(this.expiryMinutesMap);
   }
 
   /**
    * Get daily volatility from annual volatility using market minutes
    * DV = AV / sqrt(T) where T is market minutes in last year
    */
-  async getDvFromAv(v: number): Promise<number> {
-    const T = await this.getMarketMinutesInLastYear();
+  getDvFromAv(v: number): number {
+    const T = this.getMarketMinutesInLastYear();
 
     if (T === 0) return 0;
 
@@ -151,9 +124,9 @@ class MarketMinutesCache {
    * SD = AV / sqrt(T/N)
    * where T = market minutes in last year, N = market minutes till expiry
    */
-  async calculateSD(av: number, expiryDate: string): Promise<number> {
-    const T = await this.getMarketMinutesInLastYear();
-    const N = await this.getMarketMinutesTillExpiry(expiryDate);
+  calculateSD(av: number, expiryDate: string): number {
+    const T = this.getMarketMinutesInLastYear();
+    const N = this.getMarketMinutesTillExpiry(expiryDate);
 
     if (N === 0 || T === 0) return 0; // Avoid division by zero
 
@@ -163,9 +136,6 @@ class MarketMinutesCache {
   /**
    * Step 1: Calculate σₙ (Sigma N)
    * σₙ = sdMultiplier * Annual Volatility
-   * @param av Annual Volatility from NSE data
-   * @param sdMultiplier User-defined multiplier
-   * @returns σₙ value
    */
   calculateSigmaN(sigma: number, sdMultiplier: number): number {
     return sigma * sdMultiplier;
@@ -174,15 +144,12 @@ class MarketMinutesCache {
   /**
    * Step 2: Calculate σₓ (Error Deviation)
    * σₓ = σₙ / sqrt(T/N)
-   * @param sigmaN σₙ value from step 1
-   * @param expiryDate Expiry date string
-   * @returns σₓ value
    */
-  async calculateSigmaX(sigmaN: number, expiryDate: string): Promise<number> {
+  calculateSigmaX(sigmaN: number, expiryDate: string): number {
     if (!sigmaN || sigmaN <= 0) return 0;
 
-    const T = await this.getMarketMinutesInLastYear();
-    const N = await this.getMarketMinutesTillExpiry(expiryDate);
+    const T = this.getMarketMinutesInLastYear();
+    const N = this.getMarketMinutesTillExpiry(expiryDate);
 
     if (N === 0 || T === 0) return 0; // Avoid division by zero
 
@@ -193,10 +160,6 @@ class MarketMinutesCache {
    * Step 3: Calculate σₓᵢ (Confidence Deviation)
    * For CE: σₓᵢ = σₙ + σₓ
    * For PE: σₓᵢ = σₙ - σₓ
-   * @param sigmaN σₙ value from step 1
-   * @param sigmaX σₓ value from step 2
-   * @param optionType 'CE' for call options, 'PE' for put options
-   * @returns σₓᵢ value
    */
   calculateSigmaXI(sigmaN: number, sigmaX: number, optionType: 'CE' | 'PE'): number {
     if (!sigmaN || sigmaN < 0 || !sigmaX || sigmaX < 0) return 0;
@@ -205,25 +168,20 @@ class MarketMinutesCache {
 
   /**
    * Complete calculation for all sigma values
-   * @param av Annual Volatility
-   * @param sdMultiplier User multiplier
-   * @param expiryDate Expiry date
-   * @param optionType Option type
-   * @returns Object with all sigma values
    */
-  async calculateAllSigmas(
+  calculateAllSigmas(
     av: number,
     sdMultiplier: number,
     expiryDate: string,
     optionType: 'CE' | 'PE'
-  ): Promise<{
+  ): {
     sigmaN: number;
     sigmaX: number;
     sigmaXI: number;
-  }> {
-    const sigma = await this.calculateSD(av, expiryDate);
+  } {
+    const sigma = this.calculateSD(av, expiryDate);
     const sigmaN = this.calculateSigmaN(sigma, sdMultiplier);
-    const sigmaX = await this.calculateSigmaX(sigmaN, expiryDate);
+    const sigmaX = this.calculateSigmaX(sigmaN, expiryDate);
     const sigmaXI = this.calculateSigmaXI(sigmaN, sigmaX, optionType);
 
     return { sigmaN, sigmaX, sigmaXI };
@@ -237,18 +195,23 @@ class MarketMinutesCache {
     logger.info('Initializing market minutes cache at runtime...');
 
     try {
-      // Initialize market minutes in last year
-      await this.getMarketMinutesInLastYear();
+      // Load holidays into memory cache first
+      await loadHolidayCache();
 
-      // Get unique option expiry dates from database and populate cache
+      // Initialize market minutes in last year (this is cached)
+      this.getMarketMinutesInLastYear();
+
+      // Get unique option expiry dates from database and validate them
       const result = await db
         .selectDistinct({ expiry: instrumentsTable.expiry })
         .from(instrumentsTable)
         .where(inArray(instrumentsTable.instrumentType, ['CE', 'PE']));
+
       const uniqueExpiryDates = result
         .map((row) => row.expiry)
         .filter((expiry) => expiry && expiry.trim() !== '') as string[];
-      await this.prePopulateExpiryCache(uniqueExpiryDates);
+
+      this.preValidateExpiryDates(uniqueExpiryDates);
 
       logger.info('Runtime cache initialization completed successfully!');
     } catch (error) {
@@ -262,7 +225,7 @@ class MarketMinutesCache {
    */
   clearCache(): void {
     this.marketMinutesInLastYear = null;
-    this.expiryMinutesMap.clear();
+    this.validExpiryDates.clear();
   }
 
   /**
@@ -271,11 +234,14 @@ class MarketMinutesCache {
   getCacheStatus() {
     return {
       marketMinutesInLastYear: this.marketMinutesInLastYear,
-      expiryDatesCount: this.expiryMinutesMap.size,
-      expiryDates: Array.from(this.expiryMinutesMap.keys()),
+      validExpiryDatesCount: this.validExpiryDates.size,
+      validExpiryDates: Array.from(this.validExpiryDates),
     };
   }
 }
 
-// Export a singleton instance (keeping old name for compatibility)
-export const workingDaysCache = new MarketMinutesCache();
+// Export a singleton instance
+export const marketMinutesCache = new MarketMinutesCache();
+
+// Keep old name for backward compatibility
+export const workingDaysCache = marketMinutesCache;

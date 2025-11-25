@@ -1,6 +1,7 @@
 import { TZDate } from '@date-fns/tz';
 import { db } from '@server/db';
 import { holidaysTable, type HolidayType } from '@server/db/schema';
+import { logger } from '@server/lib/logger';
 import {
   addDays,
   eachDayOfInterval,
@@ -13,10 +14,41 @@ import {
   parseISO,
   startOfDay,
 } from 'date-fns';
-import { between, eq } from 'drizzle-orm';
 
 const INDIA_TIMEZONE = 'Asia/Kolkata';
 const US_TIMEZONE = 'America/New_York';
+
+// Global holiday cache - loaded once at startup
+let holidayCache: Map<string, HolidayType> | null = null;
+
+/**
+ * Load all holidays from database into memory cache
+ * Should be called once at application startup
+ */
+export async function loadHolidayCache(): Promise<void> {
+  const holidays = await db.select({ date: holidaysTable.date, type: holidaysTable.type }).from(holidaysTable);
+
+  holidayCache = new Map<string, HolidayType>();
+  for (const h of holidays) {
+    holidayCache.set(h.date, h.type);
+  }
+
+  logger.info(`Loaded ${holidayCache.size} holidays into cache`);
+}
+
+/**
+ * Get holiday type for a specific date from cache
+ */
+function getHolidayType(dateStr: string): HolidayType | undefined {
+  return holidayCache?.get(dateStr);
+}
+
+/**
+ * Check if holiday cache is loaded
+ */
+export function isHolidayCacheLoaded(): boolean {
+  return holidayCache !== null;
+}
 
 // Market session times (in IST)
 const MORNING_START_HOUR = 9;
@@ -94,20 +126,24 @@ export function getMarketMinutesForDay(date: Date, holidayType?: HolidayType | n
 }
 
 /**
- * Get all holidays from database for a given date range
+ * Get holidays for a given date range from cache
+ * Uses the in-memory holiday cache instead of querying DB
  */
-async function getHolidaysInRange(startDate: Date, endDate: Date): Promise<Map<string, HolidayType>> {
-  const start = format(startDate, 'yyyy-MM-dd');
-  const end = format(endDate, 'yyyy-MM-dd');
-
-  const holidays = await db
-    .select({ date: holidaysTable.date, type: holidaysTable.type })
-    .from(holidaysTable)
-    .where(between(holidaysTable.date, start, end));
-
+function getHolidaysInRange(startDate: Date, endDate: Date): Map<string, HolidayType> {
   const holidayMap = new Map<string, HolidayType>();
-  for (const h of holidays) {
-    holidayMap.set(h.date, h.type);
+
+  if (!holidayCache) {
+    logger.warn('Holiday cache not loaded, returning empty map');
+    return holidayMap;
+  }
+
+  const allDays = eachDayOfInterval({ start: startDate, end: endDate });
+  for (const day of allDays) {
+    const dateStr = format(day, 'yyyy-MM-dd');
+    const holidayType = holidayCache.get(dateStr);
+    if (holidayType) {
+      holidayMap.set(dateStr, holidayType);
+    }
   }
 
   return holidayMap;
@@ -235,7 +271,7 @@ function getRemainingMinutesToday(now: TZDate, holidayType?: HolidayType | null)
  * @param endDate - End date
  * @returns Total market minutes in the range
  */
-export async function calculateMarketMinutesInRange(startDate: Date | string, endDate: Date | string): Promise<number> {
+export function calculateMarketMinutesInRange(startDate: Date | string, endDate: Date | string): number {
   const start = typeof startDate === 'string' ? parseISO(startDate) : startDate;
   const end = typeof endDate === 'string' ? parseISO(endDate) : endDate;
 
@@ -246,8 +282,8 @@ export async function calculateMarketMinutesInRange(startDate: Date | string, en
     throw new Error('Start date must be before or equal to end date');
   }
 
-  // Get holidays in the date range
-  const holidayMap = await getHolidaysInRange(indiaStart, indiaEnd);
+  // Get holidays in the date range from cache
+  const holidayMap = getHolidaysInRange(indiaStart, indiaEnd);
 
   // Get all days in the interval
   const allDays = eachDayOfInterval({ start: indiaStart, end: indiaEnd });
@@ -271,10 +307,11 @@ export async function calculateMarketMinutesInRange(startDate: Date | string, en
 
 /**
  * Calculate market minutes till expiry from current time (intraday aware)
+ * This is calculated fresh every time to reflect real-time remaining minutes
  * @param expiryDate - Expiry date of the option contract
  * @returns Total market minutes from now till expiry
  */
-export async function calculateMarketMinutesTillExpiry(expiryDate: Date | string): Promise<number> {
+export function calculateMarketMinutesTillExpiry(expiryDate: Date | string): number {
   const now = new TZDate(new Date(), INDIA_TIMEZONE);
   const expiry = typeof expiryDate === 'string' ? parseExpiryDate(expiryDate) : expiryDate;
   const indiaExpiry = new TZDate(startOfDay(expiry), INDIA_TIMEZONE);
@@ -285,8 +322,8 @@ export async function calculateMarketMinutesTillExpiry(expiryDate: Date | string
     return 0;
   }
 
-  // Get holidays for the range
-  const holidayMap = await getHolidaysInRange(todayStart, indiaExpiry);
+  // Get holidays for the range from cache
+  const holidayMap = getHolidaysInRange(todayStart, indiaExpiry);
 
   // Get today's holiday type if any
   const todayStr = format(todayStart, 'yyyy-MM-dd');
@@ -333,23 +370,16 @@ export async function calculateMarketMinutesTillExpiry(expiryDate: Date | string
 
 /**
  * Check if a specific date is a holiday or weekend
+ * Uses in-memory cache for holiday lookup
  */
-export async function checkDateStatus(date: Date | string) {
+export function checkDateStatus(date: Date | string) {
   const checkDate = typeof date === 'string' ? parseISO(date) : date;
   const indiaDate = new TZDate(checkDate, INDIA_TIMEZONE);
   const dateStr = format(indiaDate, 'yyyy-MM-dd');
 
   const isWeekendDay = isWeekend(indiaDate);
-
-  const [holiday] = await db
-    .select({ name: holidaysTable.name, type: holidaysTable.type })
-    .from(holidaysTable)
-    .where(eq(holidaysTable.date, dateStr))
-    .limit(1);
-
-  const isHoliday = Boolean(holiday);
-  const holidayType = holiday?.type;
-  const holidayName = holiday?.name;
+  const holidayType = getHolidayType(dateStr);
+  const isHoliday = Boolean(holidayType);
 
   // A day is a full trading day only if it's not a weekend and not a full holiday
   const isFullTradingDay = !isWeekendDay && (!isHoliday || holidayType !== 'full');
@@ -357,7 +387,6 @@ export async function checkDateStatus(date: Date | string) {
   return {
     isHoliday,
     holidayType,
-    holidayName,
     isWeekend: isWeekendDay,
     isFullTradingDay,
     marketMinutes: isWeekendDay ? 0 : getMarketMinutesForDay(indiaDate, holidayType),

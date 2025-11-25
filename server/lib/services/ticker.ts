@@ -117,7 +117,7 @@ class TickerService {
     );
   }
 
-  private async calculateOptions() {
+  private calculateOptions() {
     for (const instrument of Object.values(this.optionChain)) {
       const av = volatilityService.values[instrument.name]?.av;
       if (!av) {
@@ -132,10 +132,10 @@ class TickerService {
       instrument.strikePosition =
         (Math.abs(instrument.strike! - instrument.underlyingLtp) * 100) / instrument.underlyingLtp;
 
-      instrument.sd = await workingDaysCache.calculateSD(av, instrument.expiry);
+      instrument.sd = workingDaysCache.calculateSD(av, instrument.expiry);
 
       // Calculate new sigma values
-      const sigmas = await workingDaysCache.calculateAllSigmas(
+      const sigmas = workingDaysCache.calculateAllSigmas(
         av,
         1, // Use base multiplier of 1 for individual instruments (multiplier applied at bounds level)
         instrument.expiry,
@@ -146,9 +146,9 @@ class TickerService {
       instrument.sigmaX = sigmas.sigmaX;
       instrument.sigmaXI = sigmas.sigmaXI;
 
-      // Calculate delta using Black-Scholes
-      const marketMinutesTillExpiry = await workingDaysCache.getMarketMinutesTillExpiry(instrument.expiry);
-      const marketMinutesInLastYear = await workingDaysCache.getMarketMinutesInLastYear();
+      // Calculate delta using Black-Scholes (fresh calculation every time)
+      const marketMinutesTillExpiry = workingDaysCache.getMarketMinutesTillExpiry(instrument.expiry);
+      const marketMinutesInLastYear = workingDaysCache.getMarketMinutesInLastYear();
       const T = marketMinutesTillExpiry / marketMinutesInLastYear;
 
       instrument.delta = calculateDeltas(
@@ -185,7 +185,7 @@ class TickerService {
     if (av) {
       try {
         // Calculate sigmas for both CE and PE
-        const ceSigmas = await workingDaysCache.calculateAllSigmas(av, sdMultiplier, expiry, 'CE');
+        const ceSigmas = workingDaysCache.calculateAllSigmas(av, sdMultiplier, expiry, 'CE');
 
         // Calculate asymmetric bounds
         // For CE: Ceiling = LTP + (σₓᵢ %)
@@ -268,6 +268,7 @@ class TickerService {
         bid: 0,
         sellValue: 0,
         strikePosition: 0,
+        orderMargin: 0,
         returnValue: 0,
         sd: 0,
         sigmaN: 0,
