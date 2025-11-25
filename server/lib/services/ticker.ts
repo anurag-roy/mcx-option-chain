@@ -6,11 +6,14 @@ import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { accessToken } from '@server/lib/services/accessToken';
 import { volatilityService } from '@server/lib/services/volatility';
 import { calculateDeltas } from '@server/lib/utils/delta';
+import { CONFIG } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import type { WSContext } from 'hono/ws';
+import { json2csv } from 'json-2-csv';
 import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
+import { writeFileSync } from 'node:fs';
 
 class TickerService {
   private ticker = new KiteTicker({
@@ -109,6 +112,8 @@ class TickerService {
       if (this.optionChain && this.client) {
         this.client.send(JSON.stringify({ type: 'optionChain', data: this.optionChain }));
       }
+      const csv = json2csv(Object.values(this.optionChain));
+      writeFileSync('option-chain.csv', csv);
     }, 250);
 
     this.ticker.setMode(
@@ -128,7 +133,8 @@ class TickerService {
       instrument.dv = volatilityService.values[instrument.name]?.dv!;
 
       instrument.underlyingLtp = this.futureLtps[instrument.name]![instrument.futExpiry]!;
-      instrument.sellValue = (instrument.bid - 0.05) * instrument.lotSize!;
+      instrument.sellValue =
+        (instrument.bid - CONFIG[instrument.name as keyof typeof CONFIG].bidBalance) * instrument.lotSize!;
       instrument.strikePosition =
         (Math.abs(instrument.strike! - instrument.underlyingLtp) * 100) / instrument.underlyingLtp;
 

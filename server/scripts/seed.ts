@@ -2,7 +2,7 @@ import { db } from '@server/db';
 import { holidaysTable, instrumentsTable } from '@server/db/schema';
 import { logger } from '@server/lib/logger';
 import { kiteService } from '@server/lib/services/kite';
-import { VIX_MAP } from '@server/shared/config';
+import { CONFIG } from '@server/shared/config';
 import { format, parse } from 'date-fns';
 import { chunk } from 'es-toolkit';
 import { readFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { join } from 'node:path';
 
 async function seedInstruments() {
   const CHUNK_SIZE = 1_000;
-  const underlyingSymbols = Object.keys(VIX_MAP);
+  const underlyingSymbols = Object.keys(CONFIG);
   const instrumentTypes = ['FUT', 'CE', 'PE'];
 
   const mcxInstruments = await kiteService.getInstruments(['MCX']);

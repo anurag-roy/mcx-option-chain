@@ -49,6 +49,6 @@ injectWebSocket(server);
 
 // Test ticker subscribe method
 setTimeout(() => {
-  logger.info('Subscribing to SILVER 2025-11-26');
-  tickerService.subscribe('SILVER', '2025-11-26', 2);
+  logger.info('Subscribing to GOLDM 2025-11-28');
+  tickerService.subscribe('GOLDM', '2025-11-28', 2.5);
 }, 5000);

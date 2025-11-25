@@ -56,6 +56,7 @@
     "drizzle-orm": "^0.44.7",
     "es-toolkit": "^1.41.0",
     "hono": "^4.10.4",
+    "json-2-csv": "^5.5.10",
     "kiteconnect-ts": "^1.1.0",
     "otplib": "^12.0.1",
     "picocolors": "^1.1.1",

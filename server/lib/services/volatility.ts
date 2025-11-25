@@ -1,7 +1,7 @@
 import { logger } from '@server/lib/logger';
 import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { setIntervalNow } from '@server/lib/utils';
-import { VIX_MAP } from '@server/shared/config';
+import { CONFIG } from '@server/shared/config';
 import YahooFinance from 'yahoo-finance2';
 
 const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
@@ -13,8 +13,8 @@ class VolatilityService {
 
   async init() {
     logger.info('Initializing volatility service');
-    for (const [symbol, value] of Object.entries(VIX_MAP)) {
-      const getAv = typeof value === 'number' ? () => value : () => getPrice(value);
+    for (const [symbol, { vix }] of Object.entries(CONFIG)) {
+      const getAv = typeof vix === 'number' ? () => vix : () => getPrice(vix);
 
       setIntervalNow(async () => {
         const av = await getAv();
