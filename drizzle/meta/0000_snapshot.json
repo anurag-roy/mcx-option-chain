@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "94a24fad-908a-430a-811c-6fbfd479c2e8",
+  "id": "42434161-22eb-49b9-a368-9915de6617b2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "holidays": {
@@ -16,6 +16,13 @@
         },
         "name": {
           "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -107,7 +114,7 @@
           "name": "expiry",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "strike": {

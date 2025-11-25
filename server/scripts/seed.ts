@@ -53,17 +53,17 @@ async function seedInstruments() {
 }
 
 async function seedHolidays() {
-  // Read the CSV file
-  const csvPath = join(process.cwd(), '.data', 'holidays.csv');
+  // Read the MCX holidays CSV file
+  const csvPath = join(process.cwd(), '.data', 'mcx_holidays.csv');
   const csvContent = readFileSync(csvPath, 'utf-8');
 
-  // Parse CSV (skip header)
+  // Parse CSV (skip header: date,holiday,type)
   const lines = csvContent.trim().split('\n').slice(1);
   const holidaysData: (typeof holidaysTable.$inferInsert)[] = [];
 
   for (const line of lines) {
-    const [dateStr, name] = line.split(',');
-    if (!dateStr || !name) continue;
+    const [dateStr, name, type] = line.split(',');
+    if (!dateStr || !name || !type) continue;
 
     // Parse the date from DD-MMM-YYYY format to proper Date
     const parsedDate = parse(dateStr, 'dd-MMM-yyyy', new Date());
@@ -71,23 +71,31 @@ async function seedHolidays() {
     // Format as YYYY-MM-DD for database storage
     const formattedDate = format(parsedDate, 'yyyy-MM-dd');
 
+    // Validate type
+    const holidayType = type.trim() as 'morning' | 'evening' | 'full';
+    if (!['morning', 'evening', 'full'].includes(holidayType)) {
+      logger.warn(`Invalid holiday type "${type}" for ${dateStr}, skipping...`);
+      continue;
+    }
+
     holidaysData.push({
       date: formattedDate,
       name: name.trim(),
+      type: holidayType,
       year: parsedDate.getFullYear(),
       month: parsedDate.getMonth() + 1, // getMonth() returns 0-11
       day: parsedDate.getDate(),
     });
   }
 
-  logger.info(`Seeding ${holidaysData.length} holidays`);
+  logger.info(`Seeding ${holidaysData.length} MCX holidays`);
 
   await db.transaction(async (tx) => {
     await tx.delete(holidaysTable);
     await tx.insert(holidaysTable).values(holidaysData);
   });
 
-  logger.info(`Seeded ${holidaysData.length} holidays`);
+  logger.info(`Seeded ${holidaysData.length} MCX holidays`);
 }
 
 await seedInstruments();

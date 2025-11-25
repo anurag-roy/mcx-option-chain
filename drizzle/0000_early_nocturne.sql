@@ -1,6 +1,7 @@
 CREATE TABLE `holidays` (
 	`date` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
+	`type` text NOT NULL,
 	`year` real NOT NULL,
 	`month` real NOT NULL,
 	`day` real NOT NULL
@@ -14,7 +15,7 @@ CREATE TABLE `instruments` (
 	`exchange_token` text NOT NULL,
 	`tradingsymbol` text NOT NULL,
 	`name` text NOT NULL,
-	`expiry` text,
+	`expiry` text NOT NULL,
 	`strike` real,
 	`tick_size` real,
 	`lot_size` real,

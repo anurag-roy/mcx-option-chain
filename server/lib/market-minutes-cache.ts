@@ -1,52 +1,53 @@
 import { db } from '@server/db';
 import { instrumentsTable } from '@server/db/schema';
 import { logger } from '@server/lib/logger';
-import { calculateWorkingDays, calculateWorkingDaysToExpiry } from '@server/lib/utils/working-days';
-import { subYears } from 'date-fns';
+import { calculateMarketMinutesInRange, calculateMarketMinutesTillExpiry } from '@server/lib/utils/market-minutes';
+import { parseISO, subYears } from 'date-fns';
+import { inArray } from 'drizzle-orm';
 
-// Cache for working days calculations
-class WorkingDaysCache {
-  private workingDaysInLastYear: number | null = null;
-  private expiryWorkingDaysMap: Map<string, number> = new Map();
+// Cache for market minutes calculations
+class MarketMinutesCache {
+  private marketMinutesInLastYear: number | null = null;
+  private expiryMinutesMap: Map<string, number> = new Map();
 
   /**
-   * Get working days in the last year (T in the SD formula)
+   * Get market minutes in the last year (T in the SD formula)
    * Calculates from 1 year ago to today and caches the result
    */
-  async getWorkingDaysInLastYear(): Promise<number> {
-    if (this.workingDaysInLastYear !== null) {
-      return this.workingDaysInLastYear;
+  async getMarketMinutesInLastYear(): Promise<number> {
+    if (this.marketMinutesInLastYear !== null) {
+      return this.marketMinutesInLastYear;
     }
 
     const today = new Date();
     const oneYearAgo = subYears(today, 1);
 
-    this.workingDaysInLastYear = await calculateWorkingDays(oneYearAgo, today);
-    logger.info(`Cached working days in last year: ${this.workingDaysInLastYear}`);
+    this.marketMinutesInLastYear = await calculateMarketMinutesInRange(oneYearAgo, today);
+    logger.info(`Cached market minutes in last year: ${this.marketMinutesInLastYear}`);
 
-    return this.workingDaysInLastYear;
+    return this.marketMinutesInLastYear;
   }
 
   /**
-   * Get working days till expiry for a specific expiry date
+   * Get market minutes till expiry for a specific expiry date
    * Caches the result for future use
    */
-  async getWorkingDaysTillExpiry(expiryDate: string): Promise<number> {
-    if (this.expiryWorkingDaysMap.has(expiryDate)) {
-      return this.expiryWorkingDaysMap.get(expiryDate)!;
+  async getMarketMinutesTillExpiry(expiryDate: string): Promise<number> {
+    if (this.expiryMinutesMap.has(expiryDate)) {
+      return this.expiryMinutesMap.get(expiryDate)!;
     }
 
     // Validate expiry date before processing
     if (!(await this.isValidExpiryDate(expiryDate))) {
       console.warn(`Invalid expiry date encountered: "${expiryDate}". Skipping...`);
-      this.expiryWorkingDaysMap.set(expiryDate, 0);
+      this.expiryMinutesMap.set(expiryDate, 0);
       return 0;
     }
 
-    const workingDays = await calculateWorkingDaysToExpiry(expiryDate);
-    this.expiryWorkingDaysMap.set(expiryDate, workingDays);
+    const marketMinutes = await calculateMarketMinutesTillExpiry(expiryDate);
+    this.expiryMinutesMap.set(expiryDate, marketMinutes);
 
-    return workingDays;
+    return marketMinutes;
   }
 
   /**
@@ -57,14 +58,13 @@ class WorkingDaysCache {
       return false;
     }
 
-    // Try to parse the date using the same logic as workingDays.ts
+    // Try to parse the date
     try {
       const trimmed = expiryDate.trim();
       let parsed: Date;
 
       // Try ISO format first (YYYY-MM-DD)
       if (trimmed.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const { parseISO } = await import('date-fns');
         parsed = parseISO(trimmed);
       }
       // Try Shoonya format (DD-MMM-YYYY)
@@ -116,13 +116,13 @@ class WorkingDaysCache {
 
     const promises = validExpiryDates.map(async (expiryDate) => {
       try {
-        const workingDays = await calculateWorkingDaysToExpiry(expiryDate);
-        this.expiryWorkingDaysMap.set(expiryDate, workingDays);
-        return { expiryDate, workingDays, success: true };
+        const marketMinutes = await calculateMarketMinutesTillExpiry(expiryDate);
+        this.expiryMinutesMap.set(expiryDate, marketMinutes);
+        return { expiryDate, marketMinutes, success: true };
       } catch (error) {
-        logger.error(`Error calculating working days for expiry "${expiryDate}":`, error);
-        this.expiryWorkingDaysMap.set(expiryDate, 0);
-        return { expiryDate, workingDays: 0, success: false };
+        logger.error(`Error calculating market minutes for expiry "${expiryDate}":`, error);
+        this.expiryMinutesMap.set(expiryDate, 0);
+        return { expiryDate, marketMinutes: 0, success: false };
       }
     });
 
@@ -131,11 +131,15 @@ class WorkingDaysCache {
     logger.info(
       `Expiry cache populated: ${successful.length} successful, ${results.length - successful.length} failed`
     );
-    logger.info(this.expiryWorkingDaysMap);
+    logger.info(this.expiryMinutesMap);
   }
 
+  /**
+   * Get daily volatility from annual volatility using market minutes
+   * DV = AV / sqrt(T) where T is market minutes in last year
+   */
   async getDvFromAv(v: number): Promise<number> {
-    const T = await this.getWorkingDaysInLastYear();
+    const T = await this.getMarketMinutesInLastYear();
 
     if (T === 0) return 0;
 
@@ -143,13 +147,13 @@ class WorkingDaysCache {
   }
 
   /**
-   * Calculate Standard Deviation using cached values (LEGACY)
+   * Calculate Standard Deviation using cached values
    * SD = AV / sqrt(T/N)
-   * where T = working days in last year, N = working days till expiry
+   * where T = market minutes in last year, N = market minutes till expiry
    */
   async calculateSD(av: number, expiryDate: string): Promise<number> {
-    const T = await this.getWorkingDaysInLastYear();
-    const N = await this.getWorkingDaysTillExpiry(expiryDate);
+    const T = await this.getMarketMinutesInLastYear();
+    const N = await this.getMarketMinutesTillExpiry(expiryDate);
 
     if (N === 0 || T === 0) return 0; // Avoid division by zero
 
@@ -177,8 +181,8 @@ class WorkingDaysCache {
   async calculateSigmaX(sigmaN: number, expiryDate: string): Promise<number> {
     if (!sigmaN || sigmaN <= 0) return 0;
 
-    const T = await this.getWorkingDaysInLastYear();
-    const N = await this.getWorkingDaysTillExpiry(expiryDate);
+    const T = await this.getMarketMinutesInLastYear();
+    const N = await this.getMarketMinutesTillExpiry(expiryDate);
 
     if (N === 0 || T === 0) return 0; // Avoid division by zero
 
@@ -230,14 +234,17 @@ class WorkingDaysCache {
    * This should be called when the application starts
    */
   async initializeRuntimeCache(): Promise<void> {
-    logger.info('Initializing working days cache at runtime...');
+    logger.info('Initializing market minutes cache at runtime...');
 
     try {
-      // Initialize working days in last year
-      await this.getWorkingDaysInLastYear();
+      // Initialize market minutes in last year
+      await this.getMarketMinutesInLastYear();
 
-      // Get unique expiry dates from database and populate cache
-      const result = await db.selectDistinct({ expiry: instrumentsTable.expiry }).from(instrumentsTable);
+      // Get unique option expiry dates from database and populate cache
+      const result = await db
+        .selectDistinct({ expiry: instrumentsTable.expiry })
+        .from(instrumentsTable)
+        .where(inArray(instrumentsTable.instrumentType, ['CE', 'PE']));
       const uniqueExpiryDates = result
         .map((row) => row.expiry)
         .filter((expiry) => expiry && expiry.trim() !== '') as string[];
@@ -254,8 +261,8 @@ class WorkingDaysCache {
    * Clear all cached values (useful for testing or forced refresh)
    */
   clearCache(): void {
-    this.workingDaysInLastYear = null;
-    this.expiryWorkingDaysMap.clear();
+    this.marketMinutesInLastYear = null;
+    this.expiryMinutesMap.clear();
   }
 
   /**
@@ -263,12 +270,12 @@ class WorkingDaysCache {
    */
   getCacheStatus() {
     return {
-      workingDaysInLastYear: this.workingDaysInLastYear,
-      expiryDatesCount: this.expiryWorkingDaysMap.size,
-      expiryDates: Array.from(this.expiryWorkingDaysMap.keys()),
+      marketMinutesInLastYear: this.marketMinutesInLastYear,
+      expiryDatesCount: this.expiryMinutesMap.size,
+      expiryDates: Array.from(this.expiryMinutesMap.keys()),
     };
   }
 }
 
-// Export a singleton instance
-export const workingDaysCache = new WorkingDaysCache();
+// Export a singleton instance (keeping old name for compatibility)
+export const workingDaysCache = new MarketMinutesCache();

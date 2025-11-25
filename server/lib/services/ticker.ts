@@ -2,10 +2,10 @@ import { db } from '@server/db';
 import { instrumentsTable } from '@server/db/schema';
 import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
+import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { accessToken } from '@server/lib/services/accessToken';
 import { volatilityService } from '@server/lib/services/volatility';
 import { calculateDeltas } from '@server/lib/utils/delta';
-import { workingDaysCache } from '@server/lib/working-days-cache';
 import type { OptionChain } from '@shared/types/types';
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
@@ -66,9 +66,6 @@ class TickerService {
       this.futureLtps[future.name]![future.expiry] = 0;
     }
     logger.info('Loaded futures data');
-    logger.info('Futures data', futures);
-    logger.info('Future tokens map', this.futureTokensMap);
-    logger.info('Future ltps', this.futureLtps);
 
     logger.info('Connecting to Kite Ticker');
     await new Promise((resolve, reject) => {
@@ -150,9 +147,9 @@ class TickerService {
       instrument.sigmaXI = sigmas.sigmaXI;
 
       // Calculate delta using Black-Scholes
-      const workingDaysTillExpiry = await workingDaysCache.getWorkingDaysTillExpiry(instrument.expiry);
-      const workingDaysInLastYear = await workingDaysCache.getWorkingDaysInLastYear();
-      const T = workingDaysTillExpiry / workingDaysInLastYear;
+      const marketMinutesTillExpiry = await workingDaysCache.getMarketMinutesTillExpiry(instrument.expiry);
+      const marketMinutesInLastYear = await workingDaysCache.getMarketMinutesInLastYear();
+      const T = marketMinutesTillExpiry / marketMinutesInLastYear;
 
       instrument.delta = calculateDeltas(
         instrument.underlyingLtp,

@@ -2,10 +2,10 @@ import { serve } from '@hono/node-server';
 import app, { injectWebSocket } from '@server/app';
 import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
+import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { kiteService } from '@server/lib/services/kite';
 import { tickerService } from '@server/lib/services/ticker';
 import { volatilityService } from '@server/lib/services/volatility';
-import { workingDaysCache } from '@server/lib/working-days-cache';
 
 try {
   await kiteService.getProfile();
@@ -17,15 +17,13 @@ try {
 
 try {
   await workingDaysCache.initializeRuntimeCache();
-  logger.info('Working days cache initialized');
 } catch (error) {
-  logger.error('Failed to initialize working days cache');
+  logger.error('Failed to initialize market minutes cache');
   process.exit(1);
 }
 
 try {
   await volatilityService.init();
-  logger.info('Volatility service initialized');
 } catch (error) {
   logger.error('Failed to initialize volatility service');
   process.exit(1);
@@ -33,7 +31,6 @@ try {
 
 try {
   await tickerService.init();
-  logger.info('Connected to Kite Ticker');
 } catch (error) {
   logger.error('Failed to connect to Kite Ticker');
   process.exit(1);
@@ -52,6 +49,6 @@ injectWebSocket(server);
 
 // Test ticker subscribe method
 setTimeout(() => {
-  logger.info('Subscribing to GOLD 2025-12-05');
-  tickerService.subscribe('GOLD', '2025-12-05', 1);
+  logger.info('Subscribing to GOLD 2025-11-26');
+  tickerService.subscribe('GOLD', '2025-11-26', 2);
 }, 5000);

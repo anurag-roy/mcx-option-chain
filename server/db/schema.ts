@@ -19,11 +19,14 @@ export const instrumentsTable = sqliteTable(
   (table) => [index('name_idx').on(table.name), index('expiry_idx').on(table.expiry)]
 );
 
+export type HolidayType = 'morning' | 'evening' | 'full';
+
 export const holidaysTable = sqliteTable(
   'holidays',
   {
     date: text().primaryKey(),
     name: text().notNull(),
+    type: text().$type<HolidayType>().notNull(),
     year: real().notNull(),
     month: real().notNull(),
     day: real().notNull(),
