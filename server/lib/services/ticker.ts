@@ -16,6 +16,9 @@ import type { WSContext } from 'hono/ws';
 import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
 
 class TickerService {
+  private readonly OPTION_CHAIN_UPDATE_INTERVAL = 250;
+  private readonly MARGIN_UPDATE_INTERVAL = 1000;
+
   private ticker = new KiteTicker({
     api_key: env.KITE_API_KEY,
     access_token: accessToken,
@@ -32,9 +35,6 @@ class TickerService {
    */
   private futureLtps: Record<string, Record<string, number>> = {};
 
-  private underlying: string | null = null;
-  private expiry: string | null = null;
-  private sdMultiplier: number | null = null;
   private optionChain: Record<number, OptionChain> = {};
   private isFetchingMargins = false;
 
@@ -44,6 +44,9 @@ class TickerService {
         continue;
       }
       this.subscribedTokens.add(token);
+    }
+    if (this.subscribedTokens.size > 3000) {
+      console.warn('Subscribed tokens limit reached -', this.subscribedTokens.size);
     }
     this.ticker.setMode('full', [...tokens]);
   }
@@ -104,11 +107,16 @@ class TickerService {
           }
 
           instrument.bid = tick.depth?.buy[0]?.price ?? 0;
-          // writeFileSync(join('tick-data', `${instrument.tradingsymbol}.json`), JSON.stringify(tick, null, 2));
         }
       }
     });
 
+    this.ticker.setMode(
+      'ltp',
+      futures.map((f) => f.instrumentToken)
+    );
+
+    // Update option chain
     setInterval(() => {
       const now = new Date();
       this.calculateOptions();
@@ -117,16 +125,15 @@ class TickerService {
       if (this.optionChain && this.client) {
         this.client.send(JSON.stringify({ type: 'optionChain', data: this.optionChain }));
       }
+
+      // import { json2csv } from 'json-2-csv';
+      // import { writeFileSync } from 'node:fs';
+      // import { join } from 'node:path';
       // const csv = json2csv(Object.values(this.optionChain).sort((a, b) => a.strike! - b.strike!));
       // writeFileSync(join('.data', 'option-chain.csv'), csv);
-    }, 250);
+    }, this.OPTION_CHAIN_UPDATE_INTERVAL);
 
-    this.ticker.setMode(
-      'ltp',
-      futures.map((f) => f.instrumentToken)
-    );
-
-    // Update order margins every second
+    // Update order margins
     setInterval(() => {
       if (this.isFetchingMargins) {
         return;
@@ -134,7 +141,7 @@ class TickerService {
       this.updateOrderMargins().catch((error) => {
         logger.error('Error updating order margins:', error);
       });
-    }, 1000);
+    }, this.MARGIN_UPDATE_INTERVAL);
   }
 
   private async updateOrderMargins() {
@@ -231,125 +238,129 @@ class TickerService {
     }
   }
 
-  public async subscribe(underlying: string, expiry: string, sdMultiplier: number) {
-    this.underlying = underlying;
-    this.expiry = expiry;
-    this.sdMultiplier = sdMultiplier;
-
-    const [futExpiry] = Object.keys(this.futureLtps[underlying]!)
-      .filter((e) => e > expiry)
-      .sort();
-    if (!futExpiry) {
-      throw new HTTPException(400, { message: `No future expiry found for ${underlying} ${expiry}` });
-    }
-
-    const ltp = this.futureLtps[underlying]?.[futExpiry];
-    if (!ltp) {
-      throw new HTTPException(400, { message: `LTP not found for ${underlying} ${expiry}` });
-    }
-
-    let ceBound = ltp;
-    let peBound = ltp;
-
-    const av = volatilityService.values[underlying]?.av;
-    if (av) {
-      try {
-        // Calculate sigmas for both CE and PE
-        const ceSigmas = workingDaysCache.calculateAllSigmas(av, sdMultiplier, expiry, 'CE');
-
-        // Calculate asymmetric bounds
-        // For CE: Ceiling = LTP + (σₓᵢ %)
-        ceBound = ltp + (ltp * ceSigmas.sigmaXI) / 100;
-
-        // For PE: Floor = LTP - (σₓᵢ %)
-        peBound = ltp - (ltp * ceSigmas.sigmaXI) / 100;
-
-        logger.info(`LTP: ${ltp}, AV: ${av}, sdMultiplier: ${sdMultiplier}`);
-        logger.info(
-          `CE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
-        );
-        logger.info(
-          `PE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
-        );
-        logger.info(`CE Bound (ceiling): ${ceBound.toFixed(2)}, PE Bound (floor): ${peBound.toFixed(2)}`);
-      } catch (error) {
-        logger.error(`Error calculating sigmas for stock ${underlying} ${expiry}:`, error);
-        // Fallback to LTP if calculation fails
-        ceBound = ltp;
-        peBound = ltp;
-      }
-    }
-
-    // New asymmetric sigma-based filtering logic
-    // Get all available strikes for PUTs and CALLs
-    const options = await db
-      .select()
+  public async subscribe(underlying: string, sdMultiplier: number) {
+    const distinctOptionExpiries = await db
+      .selectDistinct({ expiry: instrumentsTable.expiry })
       .from(instrumentsTable)
-      .where(
-        and(
-          eq(instrumentsTable.name, underlying),
-          inArray(instrumentsTable.instrumentType, ['CE', 'PE']),
-          eq(instrumentsTable.expiry, expiry)
-        )
-      )
-      .orderBy(asc(instrumentsTable.strike));
+      .where(and(eq(instrumentsTable.name, underlying), inArray(instrumentsTable.instrumentType, ['CE', 'PE'])));
 
-    const putStrikes = options
-      .filter((s) => s.instrumentType === 'PE')
-      .map((s) => s.strike!)
-      .sort((a, b) => b - a); // Sort descending for PUTs
-
-    const callStrikes = options
-      .filter((s) => s.instrumentType === 'CE')
-      .map((s) => s.strike!)
-      .sort((a, b) => a - b); // Sort ascending for CALLs
-
-    // Find closest floor strike to PE floor bound
-    const closestFloorStrike = putStrikes.find((strike) => strike <= peBound) || putStrikes[putStrikes.length - 1];
-
-    // Find closest ceiling strike to CE ceiling bound
-    const closestCeilingStrike = callStrikes.find((strike) => strike >= ceBound) || callStrikes[callStrikes.length - 1];
-
-    logger.info(
-      `Asymmetric filtering: PE floor=${peBound.toFixed(2)}, CE ceiling=${ceBound.toFixed(2)}, closestFloorStrike=${closestFloorStrike}, closestCeilingStrike=${closestCeilingStrike}`
-    );
-
-    // Filter instruments based on asymmetric logic
-    const filteredInstruments = options.filter((s) => {
-      if (s.instrumentType === 'PE') {
-        // Get all PUTs with strikes below (and including) the closest floor strike
-        return s.strike! <= closestFloorStrike!;
-      } else if (s.instrumentType === 'CE') {
-        // Get all CALLs with strikes above (and including) the closest ceiling strike
-        return s.strike! >= closestCeilingStrike!;
+    for (const { expiry } of distinctOptionExpiries) {
+      const [futExpiry] = Object.keys(this.futureLtps[underlying]!)
+        .filter((e) => e > expiry)
+        .sort();
+      if (!futExpiry) {
+        console.error(`No future expiry found for ${underlying} ${expiry}`);
+        continue;
       }
-      return false;
-    });
 
-    logger.info(`Filtered ${filteredInstruments.length} instruments out of ${options.length} total`);
+      const ltp = this.futureLtps[underlying]?.[futExpiry];
+      if (!ltp) {
+        throw new HTTPException(400, { message: `LTP not found for ${underlying} ${expiry}` });
+      }
 
-    this.unsubscribeFromTokens();
-    this.subscribeToTokens(filteredInstruments.map((s) => s.instrumentToken));
+      let ceBound = ltp;
+      let peBound = ltp;
 
-    this.optionChain = {};
-    for (const instrument of filteredInstruments) {
-      this.optionChain[instrument.instrumentToken] = {
-        ...instrument,
-        futExpiry,
-        underlyingLtp: ltp,
-        bid: 0,
-        sellValue: 0,
-        strikePosition: 0,
-        orderMargin: 0,
-        returnValue: 0,
-        sd: 0,
-        sigmaN: 0,
-        sigmaX: 0,
-        sigmaXI: 0,
-        delta: 0,
-        av: 0,
-        dv: 0,
-      };
+      const av = volatilityService.values[underlying]?.av;
+      if (av) {
+        try {
+          // Calculate sigmas for both CE and PE
+          const ceSigmas = workingDaysCache.calculateAllSigmas(av, sdMultiplier, expiry, 'CE');
+
+          // Calculate asymmetric bounds
+          // For CE: Ceiling = LTP + (σₓᵢ %)
+          ceBound = ltp + (ltp * ceSigmas.sigmaXI) / 100;
+
+          // For PE: Floor = LTP - (σₓᵢ %)
+          peBound = ltp - (ltp * ceSigmas.sigmaXI) / 100;
+
+          logger.info(`LTP: ${ltp}, AV: ${av}, sdMultiplier: ${sdMultiplier}`);
+          logger.info(
+            `CE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
+          );
+          logger.info(
+            `PE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
+          );
+          logger.info(`CE Bound (ceiling): ${ceBound.toFixed(2)}, PE Bound (floor): ${peBound.toFixed(2)}`);
+        } catch (error) {
+          logger.error(`Error calculating sigmas for stock ${underlying} ${expiry}:`, error);
+          // Fallback to LTP if calculation fails
+          ceBound = ltp;
+          peBound = ltp;
+        }
+      }
+
+      // New asymmetric sigma-based filtering logic
+      // Get all available strikes for PUTs and CALLs
+      const options = await db
+        .select()
+        .from(instrumentsTable)
+        .where(
+          and(
+            eq(instrumentsTable.name, underlying),
+            inArray(instrumentsTable.instrumentType, ['CE', 'PE']),
+            eq(instrumentsTable.expiry, expiry)
+          )
+        )
+        .orderBy(asc(instrumentsTable.strike));
+
+      const putStrikes = options
+        .filter((s) => s.instrumentType === 'PE')
+        .map((s) => s.strike!)
+        .sort((a, b) => b - a); // Sort descending for PUTs
+
+      const callStrikes = options
+        .filter((s) => s.instrumentType === 'CE')
+        .map((s) => s.strike!)
+        .sort((a, b) => a - b); // Sort ascending for CALLs
+
+      // Find closest floor strike to PE floor bound
+      const closestFloorStrike = putStrikes.find((strike) => strike <= peBound) || putStrikes[putStrikes.length - 1];
+
+      // Find closest ceiling strike to CE ceiling bound
+      const closestCeilingStrike =
+        callStrikes.find((strike) => strike >= ceBound) || callStrikes[callStrikes.length - 1];
+
+      logger.info(
+        `Asymmetric filtering: PE floor=${peBound.toFixed(2)}, CE ceiling=${ceBound.toFixed(2)}, closestFloorStrike=${closestFloorStrike}, closestCeilingStrike=${closestCeilingStrike}`
+      );
+
+      // Filter instruments based on asymmetric logic
+      const filteredInstruments = options.filter((s) => {
+        if (s.instrumentType === 'PE') {
+          // Get all PUTs with strikes below (and including) the closest floor strike
+          return s.strike! <= closestFloorStrike!;
+        } else if (s.instrumentType === 'CE') {
+          // Get all CALLs with strikes above (and including) the closest ceiling strike
+          return s.strike! >= closestCeilingStrike!;
+        }
+        return false;
+      });
+
+      logger.info(`Filtered ${filteredInstruments.length} instruments out of ${options.length} total`);
+
+      // this.unsubscribeFromTokens();
+      this.subscribeToTokens(filteredInstruments.map((s) => s.instrumentToken));
+
+      for (const instrument of filteredInstruments) {
+        this.optionChain[instrument.instrumentToken] = {
+          ...instrument,
+          futExpiry,
+          underlyingLtp: ltp,
+          bid: 0,
+          sellValue: 0,
+          strikePosition: 0,
+          orderMargin: 0,
+          returnValue: 0,
+          sd: 0,
+          sigmaN: 0,
+          sigmaX: 0,
+          sigmaXI: 0,
+          delta: 0,
+          av: 0,
+          dv: 0,
+        };
+      }
     }
   }
 
