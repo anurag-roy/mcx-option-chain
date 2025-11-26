@@ -10,12 +10,10 @@ import { calculateDeltas } from '@server/lib/utils/delta';
 import { CONFIG } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { chunk } from 'es-toolkit';
 import { HTTPException } from 'hono/http-exception';
 import type { WSContext } from 'hono/ws';
-import { json2csv } from 'json-2-csv';
 import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 class TickerService {
   private ticker = new KiteTicker({
@@ -38,6 +36,7 @@ class TickerService {
   private expiry: string | null = null;
   private sdMultiplier: number | null = null;
   private optionChain: Record<number, OptionChain> = {};
+  private isFetchingMargins = false;
 
   private subscribeToTokens(tokens: number[]) {
     for (const token of tokens) {
@@ -111,12 +110,15 @@ class TickerService {
     });
 
     setInterval(() => {
+      const now = new Date();
       this.calculateOptions();
+      const end = new Date();
+      logger.info(`Calculated options in ${end.getTime() - now.getTime()}ms`);
       if (this.optionChain && this.client) {
         this.client.send(JSON.stringify({ type: 'optionChain', data: this.optionChain }));
       }
-      const csv = json2csv(Object.values(this.optionChain).sort((a, b) => a.strike! - b.strike!));
-      writeFileSync(join('.data', 'option-chain.csv'), csv);
+      // const csv = json2csv(Object.values(this.optionChain).sort((a, b) => a.strike! - b.strike!));
+      // writeFileSync(join('.data', 'option-chain.csv'), csv);
     }, 250);
 
     this.ticker.setMode(
@@ -126,6 +128,9 @@ class TickerService {
 
     // Update order margins every second
     setInterval(() => {
+      if (this.isFetchingMargins) {
+        return;
+      }
       this.updateOrderMargins().catch((error) => {
         logger.error('Error updating order margins:', error);
       });
@@ -133,46 +138,46 @@ class TickerService {
   }
 
   private async updateOrderMargins() {
+    this.isFetchingMargins = true;
     const options = Object.values(this.optionChain);
-    if (options.length === 0) {
-      return;
-    }
-
-    // Split into chunks of 200 (Zerodha's limit per request)
-    const chunks: OptionChain[][] = [];
-    for (let i = 0; i < options.length; i += 200) {
-      chunks.push(options.slice(i, i + 200));
-    }
-
-    // Process all chunks in parallel
-    const marginPromises = chunks.map(async (chunk) => {
-      const orders = chunk.map((option) => ({
-        exchange: 'MCX' as const,
-        order_type: 'LIMIT' as const,
-        product: 'MIS' as const,
-        quantity: 1,
-        tradingsymbol: option.tradingsymbol!,
-        transaction_type: 'SELL' as const,
-        variety: 'regular' as const,
-      }));
-
-      try {
-        const margins = await kiteService.orderMargins(orders, 'compact');
-
-        // Update optionChain with margins
-        for (let i = 0; i < margins.length; i++) {
-          const margin = margins[i];
-          const option = chunk[i];
-          if (option && option.instrumentToken && margin) {
-            this.optionChain[option.instrumentToken]!.orderMargin = margin.total;
-          }
-        }
-      } catch (error) {
-        logger.error('Error fetching margins for chunk:', error);
+    if (options.length > 0) {
+      const tsToTokenMap: Record<string, number> = {};
+      for (const option of options) {
+        tsToTokenMap[option.tradingsymbol] = option.instrumentToken;
       }
-    });
 
-    await Promise.all(marginPromises);
+      const chunks = chunk(
+        options.map((o) => o.tradingsymbol),
+        200
+      );
+
+      for (const tradingsymbols of chunks) {
+        const orders = tradingsymbols.map((tradingsymbol) => ({
+          exchange: 'MCX' as const,
+          order_type: 'LIMIT' as const,
+          product: 'MIS' as const,
+          quantity: 1,
+          tradingsymbol: tradingsymbol,
+          transaction_type: 'SELL' as const,
+          variety: 'regular' as const,
+        }));
+
+        try {
+          const margins = await kiteService.orderMargins(orders, 'compact');
+
+          for (const margin of margins) {
+            const token = tsToTokenMap[margin.tradingsymbol];
+            if (token) {
+              this.optionChain[token]!.orderMargin = margin.total;
+            }
+          }
+        } catch (error) {
+          logger.error(`Error fetching margins for chunk:`, error);
+        }
+      }
+    }
+
+    this.isFetchingMargins = false;
   }
 
   private calculateOptions() {

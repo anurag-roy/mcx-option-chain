@@ -9,10 +9,19 @@ import {
 import { parse, parseISO, subYears } from 'date-fns';
 import { inArray } from 'drizzle-orm';
 
+// TTL for expiry minutes cache (1 minute in milliseconds)
+const EXPIRY_CACHE_TTL_MS = 60 * 1000;
+
+type ExpiryMinutesCacheEntry = {
+  value: number;
+  timestamp: number;
+};
+
 // Cache for market minutes calculations
 class MarketMinutesCache {
   private marketMinutesInLastYear: number | null = null;
   private validExpiryDates: Set<string> = new Set();
+  private expiryMinutesCache: Map<string, ExpiryMinutesCacheEntry> = new Map();
 
   /**
    * Get market minutes in the last year (T in the SD formula)
@@ -35,7 +44,7 @@ class MarketMinutesCache {
 
   /**
    * Get market minutes till expiry for a specific expiry date
-   * This is calculated fresh every time to reflect real-time remaining minutes
+   * Uses a 1-minute TTL cache for performance, while still reflecting near-real-time values
    */
   getMarketMinutesTillExpiry(expiryDate: string): number {
     // Validate expiry date
@@ -44,8 +53,19 @@ class MarketMinutesCache {
       return 0;
     }
 
-    // Calculate fresh value every time - no caching!
-    return calculateMarketMinutesTillExpiry(expiryDate);
+    const now = Date.now();
+    const cached = this.expiryMinutesCache.get(expiryDate);
+
+    // Return cached value if still valid (less than 1 minute old)
+    if (cached && now - cached.timestamp < EXPIRY_CACHE_TTL_MS) {
+      return cached.value;
+    }
+
+    // Calculate fresh value and cache it
+    const value = calculateMarketMinutesTillExpiry(expiryDate);
+    this.expiryMinutesCache.set(expiryDate, { value, timestamp: now });
+
+    return value;
   }
 
   /**
@@ -226,6 +246,7 @@ class MarketMinutesCache {
   clearCache(): void {
     this.marketMinutesInLastYear = null;
     this.validExpiryDates.clear();
+    this.expiryMinutesCache.clear();
   }
 
   /**
@@ -236,6 +257,7 @@ class MarketMinutesCache {
       marketMinutesInLastYear: this.marketMinutesInLastYear,
       validExpiryDatesCount: this.validExpiryDates.size,
       validExpiryDates: Array.from(this.validExpiryDates),
+      expiryMinutesCacheSize: this.expiryMinutesCache.size,
     };
   }
 }
