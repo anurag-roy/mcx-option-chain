@@ -4,6 +4,7 @@ import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
 import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { accessToken } from '@server/lib/services/accessToken';
+import { kiteService } from '@server/lib/services/kite';
 import { volatilityService } from '@server/lib/services/volatility';
 import { calculateDeltas } from '@server/lib/utils/delta';
 import { CONFIG } from '@server/shared/config';
@@ -14,6 +15,7 @@ import type { WSContext } from 'hono/ws';
 import { json2csv } from 'json-2-csv';
 import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
 import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 class TickerService {
   private ticker = new KiteTicker({
@@ -103,6 +105,7 @@ class TickerService {
           }
 
           instrument.bid = tick.depth?.buy[0]?.price ?? 0;
+          // writeFileSync(join('tick-data', `${instrument.tradingsymbol}.json`), JSON.stringify(tick, null, 2));
         }
       }
     });
@@ -112,14 +115,64 @@ class TickerService {
       if (this.optionChain && this.client) {
         this.client.send(JSON.stringify({ type: 'optionChain', data: this.optionChain }));
       }
-      const csv = json2csv(Object.values(this.optionChain));
-      writeFileSync('option-chain.csv', csv);
+      const csv = json2csv(Object.values(this.optionChain).sort((a, b) => a.strike! - b.strike!));
+      writeFileSync(join('.data', 'option-chain.csv'), csv);
     }, 250);
 
     this.ticker.setMode(
       'ltp',
       futures.map((f) => f.instrumentToken)
     );
+
+    // Update order margins every second
+    setInterval(() => {
+      this.updateOrderMargins().catch((error) => {
+        logger.error('Error updating order margins:', error);
+      });
+    }, 1000);
+  }
+
+  private async updateOrderMargins() {
+    const options = Object.values(this.optionChain);
+    if (options.length === 0) {
+      return;
+    }
+
+    // Split into chunks of 200 (Zerodha's limit per request)
+    const chunks: OptionChain[][] = [];
+    for (let i = 0; i < options.length; i += 200) {
+      chunks.push(options.slice(i, i + 200));
+    }
+
+    // Process all chunks in parallel
+    const marginPromises = chunks.map(async (chunk) => {
+      const orders = chunk.map((option) => ({
+        exchange: 'MCX' as const,
+        order_type: 'LIMIT' as const,
+        product: 'MIS' as const,
+        quantity: 1,
+        tradingsymbol: option.tradingsymbol!,
+        transaction_type: 'SELL' as const,
+        variety: 'regular' as const,
+      }));
+
+      try {
+        const margins = await kiteService.orderMargins(orders, 'compact');
+
+        // Update optionChain with margins
+        for (let i = 0; i < margins.length; i++) {
+          const margin = margins[i];
+          const option = chunk[i];
+          if (option && option.instrumentToken && margin) {
+            this.optionChain[option.instrumentToken]!.orderMargin = margin.total;
+          }
+        }
+      } catch (error) {
+        logger.error('Error fetching margins for chunk:', error);
+      }
+    });
+
+    await Promise.all(marginPromises);
   }
 
   private calculateOptions() {
@@ -132,11 +185,17 @@ class TickerService {
       // If av exists, dv should also exist
       instrument.dv = volatilityService.values[instrument.name]?.dv!;
 
+      const { bidBalance, multiplier } = CONFIG[instrument.name as keyof typeof CONFIG];
       instrument.underlyingLtp = this.futureLtps[instrument.name]![instrument.futExpiry]!;
-      instrument.sellValue =
-        (instrument.bid - CONFIG[instrument.name as keyof typeof CONFIG].bidBalance) * instrument.lotSize!;
       instrument.strikePosition =
         (Math.abs(instrument.strike! - instrument.underlyingLtp) * 100) / instrument.underlyingLtp;
+      if (instrument.bid) {
+        instrument.sellValue = (instrument.bid - bidBalance) * instrument.lotSize!;
+        if (instrument.orderMargin > 0) {
+          instrument.returnValue =
+            ((instrument.bid - bidBalance) * instrument.lotSize! * multiplier) / instrument.orderMargin;
+        }
+      }
 
       instrument.sd = workingDaysCache.calculateSD(av, instrument.expiry);
 
@@ -200,12 +259,14 @@ class TickerService {
         // For PE: Floor = LTP - (σₓᵢ %)
         peBound = ltp - (ltp * ceSigmas.sigmaXI) / 100;
 
+        logger.info(`LTP: ${ltp}, AV: ${av}, sdMultiplier: ${sdMultiplier}`);
         logger.info(
-          `LTP: ${ltp}, AV: ${av}, sdMultiplier: ${sdMultiplier}`,
-          `\nCE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`,
-          `\nPE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`,
-          `\nCE Bound (ceiling): ${ceBound.toFixed(2)}, PE Bound (floor): ${peBound.toFixed(2)}`
+          `CE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
         );
+        logger.info(
+          `PE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
+        );
+        logger.info(`CE Bound (ceiling): ${ceBound.toFixed(2)}, PE Bound (floor): ${peBound.toFixed(2)}`);
       } catch (error) {
         logger.error(`Error calculating sigmas for stock ${underlying} ${expiry}:`, error);
         // Fallback to LTP if calculation fails
