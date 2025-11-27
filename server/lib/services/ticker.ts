@@ -4,7 +4,7 @@ import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
 import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { accessToken } from '@server/lib/services/accessToken';
-import { kiteService } from '@server/lib/services/kite';
+import { getOrderMargins } from '@server/lib/services/kite';
 import { volatilityService } from '@server/lib/services/volatility';
 import { calculateDeltas } from '@server/lib/utils/delta';
 import { CONFIG, type Symbol } from '@server/shared/config';
@@ -17,9 +17,9 @@ import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
 
 export type OptionChainCallback = (data: Record<number, OptionChain>) => void;
 
-class TickerService {
-  private readonly OPTION_CHAIN_UPDATE_INTERVAL = 250;
-  private readonly MARGIN_UPDATE_INTERVAL = 1000;
+export class TickerService {
+  private readonly OPTION_CHAIN_UPDATE_INTERVAL = 500;
+  private readonly MARGIN_UPDATE_INTERVAL = 5000;
 
   private ticker = new KiteTicker({
     api_key: env.KITE_API_KEY,
@@ -193,7 +193,7 @@ class TickerService {
 
       const chunks = chunk(
         options.map((o) => o.tradingsymbol),
-        200
+        400
       );
 
       for (const tradingsymbols of chunks) {
@@ -208,7 +208,7 @@ class TickerService {
         }));
 
         try {
-          const margins = await kiteService.orderMargins(orders, 'compact');
+          const margins = await getOrderMargins(orders);
 
           for (const margin of margins) {
             const token = tsToTokenMap[margin.tradingsymbol];
@@ -438,5 +438,3 @@ class TickerService {
     this.ticker.disconnect();
   }
 }
-
-export const tickerService = new TickerService();

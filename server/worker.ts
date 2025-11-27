@@ -11,10 +11,12 @@ import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
 import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { kiteService } from '@server/lib/services/kite';
-import { tickerService } from '@server/lib/services/ticker';
+import { TickerService } from '@server/lib/services/ticker';
 import { volatilityService } from '@server/lib/services/volatility';
 import type { Symbol } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
+
+const tickerService = new TickerService();
 
 // Message types for IPC communication
 export type WorkerMessage =
