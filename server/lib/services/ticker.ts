@@ -74,9 +74,8 @@ class TickerService {
       }
       this.subscribedTokens.add(token);
     }
-    logger.info(`Number of subscribed tokens: ${this.subscribedTokens.size}`);
     if (this.subscribedTokens.size > 3000) {
-      console.warn('Subscribed tokens limit reached -', this.subscribedTokens.size);
+      logger.warn('Subscribed tokens limit reached -', this.subscribedTokens.size);
     }
     this.ticker.setMode('full', [...tokens]);
   }
@@ -420,6 +419,8 @@ class TickerService {
         logger.error(`Failed to subscribe to ${symbol}:`, error);
       }
     }
+
+    logger.info(`Subscribed to ${this.subscribedTokens.size} tokens`);
   }
 
   public addClient(client: WSContext) {

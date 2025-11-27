@@ -12,12 +12,8 @@ export default defineConfig({
       target: 'react',
       autoCodeSplitting: true,
     }),
-    // React + React Compiler
-    react({
-      babel: {
-        plugins: [['babel-plugin-react-compiler']],
-      },
-    }),
+    // React
+    react(),
     // Tailwind CSS
     tailwindcss(),
   ],

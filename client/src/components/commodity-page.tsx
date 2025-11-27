@@ -49,16 +49,10 @@ export function CommodityPage({ title, tables }: CommodityPageProps) {
       ) : (
         <div className='grid min-h-0 flex-1 grid-cols-2 gap-6'>
           {tables.map((table) => (
-            <SymbolTable
-              key={table.name}
-              name={table.name}
-              symbols={table.symbols}
-              optionChainData={optionChainData}
-            />
+            <SymbolTable key={table.name} name={table.name} symbols={table.symbols} optionChainData={optionChainData} />
           ))}
         </div>
       )}
     </div>
   );
 }
-

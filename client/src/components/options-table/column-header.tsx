@@ -26,29 +26,39 @@ export function DataTableColumnHeader<TData, TValue>({
     return <div className={cn(className)}>{title}</div>;
   }
 
+  const isSorted = column.getIsSorted();
+  console.log(`${title} is sorted: ${isSorted}`);
+
   return (
     <div className={cn('flex items-center space-x-2', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="ml-auto h-8 data-[state=open]:bg-accent">
+          <Button
+            variant='ghost'
+            size='sm'
+            className={cn(
+              'data-[state=open]:bg-accent ml-auto h-8',
+              isSorted && 'font-semibold text-blue-600 dark:text-blue-400'
+            )}
+          >
             <span>{title}</span>
             {column.getIsSorted() === 'desc' ? (
-              <ArrowDown className="ml-2 h-4 w-4" />
+              <ArrowDown className='ml-2 h-4 w-4' />
             ) : column.getIsSorted() === 'asc' ? (
-              <ArrowUp className="ml-2 h-4 w-4" />
+              <ArrowUp className='ml-2 h-4 w-4' />
             ) : (
-              <ArrowUpDown className="ml-2 h-4 w-4" />
+              <ArrowUpDown className='ml-2 h-4 w-4' />
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent align='start'>
           <DropdownMenuItem
             onClick={() => {
               column.toggleSorting(false);
               table.resetPageIndex();
             }}
           >
-            <ArrowUp className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+            <ArrowUp className='text-muted-foreground/70 mr-2 h-3.5 w-3.5' />
             Asc
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -57,7 +67,7 @@ export function DataTableColumnHeader<TData, TValue>({
               table.resetPageIndex();
             }}
           >
-            <ArrowDown className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+            <ArrowDown className='text-muted-foreground/70 mr-2 h-3.5 w-3.5' />
             Desc
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -67,7 +77,7 @@ export function DataTableColumnHeader<TData, TValue>({
               table.resetPageIndex();
             }}
           >
-            <RotateCcw className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+            <RotateCcw className='text-muted-foreground/70 mr-2 h-3.5 w-3.5' />
             Reset
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -75,4 +85,3 @@ export function DataTableColumnHeader<TData, TValue>({
     </div>
   );
 }
-

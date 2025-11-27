@@ -11,4 +11,3 @@ function RouteComponent() {
 
   return <CommodityPage title={config.name} tables={config.tables} />;
 }
-

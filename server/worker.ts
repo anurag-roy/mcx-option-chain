@@ -122,4 +122,3 @@ process.on('SIGINT', async () => {
   await tickerService.disconnect();
   process.exit(0);
 });
-

@@ -1,11 +1,4 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@client/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@client/components/ui/table';
 import { cn } from '@client/lib/utils';
 import type { OptionChain } from '@client/types/option-chain';
 import {
@@ -39,19 +32,16 @@ export const DataTable = memo(function DataTable({ columns, data }: DataTablePro
   });
 
   return (
-    <div className="rounded-md border">
+    <div className='rounded-md border'>
       <Table>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id} className="divide-x">
+            <TableRow key={headerGroup.id} className='divide-x'>
               {headerGroup.headers.map((header) => {
                 return (
                   <TableHead
                     key={header.id}
-                    className={cn(
-                      'text-xs',
-                      numericCols.includes(header.getContext().column.id) ? 'text-right' : ''
-                    )}
+                    className={cn('text-xs', numericCols.includes(header.getContext().column.id) ? 'text-right' : '')}
                   >
                     {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                   </TableHead>
@@ -63,7 +53,7 @@ export const DataTable = memo(function DataTable({ columns, data }: DataTablePro
         <TableBody>
           {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'} className="divide-x">
+              <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'} className='divide-x'>
                 {row.getVisibleCells().map((cell) => {
                   return (
                     <TableCell
@@ -81,7 +71,7 @@ export const DataTable = memo(function DataTable({ columns, data }: DataTablePro
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
+              <TableCell colSpan={columns.length} className='h-24 text-center'>
                 No results.
               </TableCell>
             </TableRow>
@@ -91,4 +81,3 @@ export const DataTable = memo(function DataTable({ columns, data }: DataTablePro
     </div>
   );
 });
-
