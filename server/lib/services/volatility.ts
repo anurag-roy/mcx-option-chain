@@ -1,7 +1,7 @@
 import { logger } from '@server/lib/logger';
 import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { setIntervalNow } from '@server/lib/utils';
-import { CONFIG } from '@server/shared/config';
+import { CONFIG, type Symbol } from '@server/shared/config';
 import YahooFinance from 'yahoo-finance2';
 
 const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
@@ -11,9 +11,25 @@ const getPrice = (symbol: string) =>
 class VolatilityService {
   values: Record<string, { av: number; dv: number }> = {};
 
+  /**
+   * Optional filter for symbols this instance should handle
+   */
+  private symbolsFilter: Symbol[] | null = null;
+
+  /**
+   * Set the symbols this volatility service should handle.
+   * If not set, all symbols from CONFIG are handled.
+   */
+  public setSymbolsFilter(symbols: Symbol[]) {
+    this.symbolsFilter = symbols;
+  }
+
   async init() {
-    logger.info('Initializing volatility service');
-    for (const [symbol, { vix }] of Object.entries(CONFIG)) {
+    const symbols = this.symbolsFilter ?? (Object.keys(CONFIG) as Symbol[]);
+    logger.info(`Initializing volatility service for ${symbols.length} symbols`);
+
+    for (const symbol of symbols) {
+      const { vix } = CONFIG[symbol];
       const getAv = typeof vix === 'number' ? () => vix : () => getPrice(vix);
 
       setIntervalNow(async () => {

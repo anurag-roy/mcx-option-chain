@@ -7,13 +7,15 @@ import { accessToken } from '@server/lib/services/accessToken';
 import { kiteService } from '@server/lib/services/kite';
 import { volatilityService } from '@server/lib/services/volatility';
 import { calculateDeltas } from '@server/lib/utils/delta';
-import { CONFIG } from '@server/shared/config';
+import { CONFIG, type Symbol } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { chunk } from 'es-toolkit';
 import { HTTPException } from 'hono/http-exception';
 import type { WSContext } from 'hono/ws';
 import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
+
+export type OptionChainCallback = (data: Record<number, OptionChain>) => void;
 
 class TickerService {
   private readonly OPTION_CHAIN_UPDATE_INTERVAL = 250;
@@ -38,6 +40,33 @@ class TickerService {
   private optionChain: Record<number, OptionChain> = {};
   private isFetchingMargins = false;
 
+  /**
+   * Optional callback for publishing option chain data (used in worker mode)
+   */
+  private dataCallback: OptionChainCallback | null = null;
+
+  /**
+   * Optional filter for symbols this instance should handle
+   */
+  private symbolsFilter: Symbol[] | null = null;
+
+  /**
+   * Set the symbols this ticker instance should handle.
+   * If not set, all symbols from CONFIG are handled.
+   */
+  public setSymbolsFilter(symbols: Symbol[]) {
+    this.symbolsFilter = symbols;
+    logger.info(`Ticker will handle symbols: ${symbols.join(', ')}`);
+  }
+
+  /**
+   * Set a callback for publishing option chain data.
+   * When set, this callback is called instead of sending to WS client.
+   */
+  public setDataCallback(callback: OptionChainCallback) {
+    this.dataCallback = callback;
+  }
+
   private subscribeToTokens(tokens: number[]) {
     for (const token of tokens) {
       if (this.subscribedTokens.has(token)) {
@@ -45,6 +74,7 @@ class TickerService {
       }
       this.subscribedTokens.add(token);
     }
+    logger.info(`Number of subscribed tokens: ${this.subscribedTokens.size}`);
     if (this.subscribedTokens.size > 3000) {
       console.warn('Subscribed tokens limit reached -', this.subscribedTokens.size);
     }
@@ -61,10 +91,16 @@ class TickerService {
 
   async init() {
     logger.info('Loading futures data');
-    const futures = await db
+    let futuresQuery = db
       .select()
       .from(instrumentsTable)
       .where(and(eq(instrumentsTable.instrumentType, 'FUT'), isNotNull(instrumentsTable.expiry)));
+
+    // If symbols filter is set, only load futures for those symbols
+    const futures = this.symbolsFilter
+      ? (await futuresQuery).filter((f) => this.symbolsFilter!.includes(f.name as Symbol))
+      : await futuresQuery;
+
     for (const future of futures) {
       this.futureTokensMap[future.instrumentToken] = { underlying: future.name, expiry: future.expiry };
       if (!this.futureLtps[future.name]) {
@@ -72,7 +108,7 @@ class TickerService {
       }
       this.futureLtps[future.name]![future.expiry] = 0;
     }
-    logger.info('Loaded futures data');
+    logger.info(`Loaded futures data for ${futures.length} instruments`);
 
     logger.info('Connecting to Kite Ticker');
     await new Promise((resolve, reject) => {
@@ -118,18 +154,21 @@ class TickerService {
 
     // Update option chain
     setInterval(() => {
-      const now = new Date();
-      this.calculateOptions();
-      const end = new Date();
-      logger.info(`Calculated options in ${end.getTime() - now.getTime()}ms`);
-      if (this.optionChain && this.client) {
-        this.client.send(JSON.stringify({ type: 'optionChain', data: this.optionChain }));
+      const options = this.calculateOptions();
+
+      // Publish option chain data via callback (worker mode) or WS client
+      if (options.length > 0) {
+        if (this.dataCallback) {
+          this.dataCallback(options);
+        } else if (this.client) {
+          this.client.send(JSON.stringify({ type: 'optionChain', data: options }));
+        }
       }
 
       // import { json2csv } from 'json-2-csv';
       // import { writeFileSync } from 'node:fs';
       // import { join } from 'node:path';
-      // const csv = json2csv(Object.values(this.optionChain).sort((a, b) => a.strike! - b.strike!));
+      // const csv = json2csv(options.sort((a, b) => a.strike! - b.strike!));
       // writeFileSync(join('.data', 'option-chain.csv'), csv);
     }, this.OPTION_CHAIN_UPDATE_INTERVAL);
 
@@ -236,6 +275,8 @@ class TickerService {
         instrument.instrumentType as 'CE' | 'PE'
       );
     }
+
+    return Object.values(this.optionChain).filter((o) => o.sellValue > o.returnValue);
   }
 
   public async subscribe(underlying: string, sdMultiplier: number) {
@@ -274,16 +315,17 @@ class TickerService {
           // For PE: Floor = LTP - (σₓᵢ %)
           peBound = ltp - (ltp * ceSigmas.sigmaXI) / 100;
 
-          logger.info(`LTP: ${ltp}, AV: ${av}, sdMultiplier: ${sdMultiplier}`);
           logger.info(
-            `CE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
+            `${underlying} ${expiry}: LTP: ${ltp}, AV: ${av}, sdMultiplier: ${sdMultiplier}, minutes in last year: ${workingDaysCache.getMarketMinutesInLastYear()}, minutes till expiry: ${workingDaysCache.getMarketMinutesTillExpiry(expiry)}`
           );
           logger.info(
-            `PE Sigmas: σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
+            `${underlying} ${expiry}: Sigmas: σ=${ceSigmas.sigma.toFixed(3)}, σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
           );
-          logger.info(`CE Bound (ceiling): ${ceBound.toFixed(2)}, PE Bound (floor): ${peBound.toFixed(2)}`);
+          logger.info(
+            `${underlying} ${expiry}: CE Bound (ceiling): ${ceBound.toFixed(2)}, PE Bound (floor): ${peBound.toFixed(2)}`
+          );
         } catch (error) {
-          logger.error(`Error calculating sigmas for stock ${underlying} ${expiry}:`, error);
+          logger.error(`${underlying} ${expiry}: Error calculating sigmas:`, error);
           // Fallback to LTP if calculation fails
           ceBound = ltp;
           peBound = ltp;
@@ -315,24 +357,23 @@ class TickerService {
         .sort((a, b) => a - b); // Sort ascending for CALLs
 
       // Find closest floor strike to PE floor bound
-      const closestFloorStrike = putStrikes.find((strike) => strike <= peBound) || putStrikes[putStrikes.length - 1];
+      const closestFloorStrike = putStrikes.find((strike) => strike <= peBound);
 
       // Find closest ceiling strike to CE ceiling bound
-      const closestCeilingStrike =
-        callStrikes.find((strike) => strike >= ceBound) || callStrikes[callStrikes.length - 1];
+      const closestCeilingStrike = callStrikes.find((strike) => strike >= ceBound);
 
       logger.info(
-        `Asymmetric filtering: PE floor=${peBound.toFixed(2)}, CE ceiling=${ceBound.toFixed(2)}, closestFloorStrike=${closestFloorStrike}, closestCeilingStrike=${closestCeilingStrike}`
+        `Asymmetric filtering: PE floor=${peBound.toFixed(2)}, CE ceiling=${ceBound.toFixed(2)}, closestFloorStrike=${closestFloorStrike ?? 'N/A'}, closestCeilingStrike=${closestCeilingStrike ?? 'N/A'}`
       );
 
       // Filter instruments based on asymmetric logic
       const filteredInstruments = options.filter((s) => {
         if (s.instrumentType === 'PE') {
           // Get all PUTs with strikes below (and including) the closest floor strike
-          return s.strike! <= closestFloorStrike!;
+          return closestFloorStrike ? s.strike! <= closestFloorStrike! : false;
         } else if (s.instrumentType === 'CE') {
           // Get all CALLs with strikes above (and including) the closest ceiling strike
-          return s.strike! >= closestCeilingStrike!;
+          return closestCeilingStrike ? s.strike! >= closestCeilingStrike! : false;
         }
         return false;
       });
@@ -360,6 +401,23 @@ class TickerService {
           av: 0,
           dv: 0,
         };
+      }
+    }
+  }
+
+  /**
+   * Subscribe to all symbols in the filter (or all symbols if no filter set).
+   * Used by workers to subscribe to their assigned symbols.
+   */
+  public async subscribeAll(sdMultiplier: number) {
+    const symbols = this.symbolsFilter ?? (Object.keys(CONFIG) as Symbol[]);
+    logger.info(`Subscribing to ${symbols.length} symbols: ${symbols.join(', ')}`);
+
+    for (const symbol of symbols) {
+      try {
+        await this.subscribe(symbol, sdMultiplier);
+      } catch (error) {
+        logger.error(`Failed to subscribe to ${symbol}:`, error);
       }
     }
   }

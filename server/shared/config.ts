@@ -1,15 +1,3 @@
-// Multiplier (to be multiplied with premium to get return value)
-// GOLD => 100
-// GOLDM => 10
-// SILVER => 30
-// SILVERM => 5
-// CRUDEOILM => 10
-// CRUDEOIL => 100
-// NATGASMINI => 250
-// NATGAS => 1250
-// COPPER => 2500
-// ZINC => 5000
-
 export const CONFIG = {
   GOLD: { vix: '^GVZ', bidBalance: 0.5, multiplier: 100 },
   GOLDM: { vix: '^GVZ', bidBalance: 0.5, multiplier: 10 },
@@ -22,3 +10,16 @@ export const CONFIG = {
   COPPER: { vix: 49, bidBalance: 0.01, multiplier: 2500 },
   ZINC: { vix: 25, bidBalance: 0.01, multiplier: 5000 },
 };
+
+/**
+ * Worker groups for distributing symbols across multiple KiteTicker connections.
+ * Each group runs in a separate process to avoid Zerodha's 3000 instrument limit
+ * and to distribute tick processing load.
+ */
+export const WORKER_GROUPS = [
+  ['GOLD', 'GOLDM', 'COPPER'],
+  ['SILVER', 'SILVERM', 'ZINC'],
+  ['CRUDEOIL', 'CRUDEOILM', 'NATURALGAS', 'NATGASMINI'],
+] as const;
+
+export type Symbol = keyof typeof CONFIG;

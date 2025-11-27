@@ -1,38 +1,11 @@
+import type { OptionChainData } from '@client/types/option-chain';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-type SpreadsData = {
-  callSpread: {
-    maxProfit: number;
-    maxLoss: number;
-    creditOrDebit: number;
-    breakEven: number;
-  };
-  putSpread: {
-    maxProfit: number;
-    maxLoss: number;
-    creditOrDebit: number;
-    breakEven: number;
-  };
-};
-
-type OrderStatusData = {
-  ordersEnabled: boolean;
-  orderPlaced: boolean;
-  entryPrice: number | null;
-  success?: boolean;
-  error?: string;
-};
-
-type WebSocketMessage = { type: 'spreads'; data: SpreadsData } | { type: 'order-status'; data: OrderStatusData };
+type WebSocketMessage = { type: 'optionChain'; data: OptionChainData };
 
 export function useWebSocket() {
-  const [spreadsData, setSpreadsData] = useState<SpreadsData | null>(null);
-  const [orderStatus, setOrderStatus] = useState<OrderStatusData>({
-    ordersEnabled: false,
-    orderPlaced: false,
-    entryPrice: null,
-  });
+  const [optionChainData, setOptionChainData] = useState<OptionChainData>({});
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -40,7 +13,6 @@ export function useWebSocket() {
 
   const connect = useCallback(() => {
     try {
-      // Use the Hono RPC client to get the WebSocket URL
       const wsUrl = new URL('/api/ws', window.location.href);
       wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
 
@@ -57,29 +29,11 @@ export function useWebSocket() {
         try {
           const message = JSON.parse(event.data) as WebSocketMessage;
 
-          if (message.type === 'spreads') {
-            setSpreadsData(message.data);
-          } else if (message.type === 'order-status') {
-            setOrderStatus(message.data);
-
-            // Handle order placement notifications
-            if (message.data.orderPlaced && message.data.success !== undefined) {
-              if (message.data.success) {
-                toast.success('Order placed successfully!');
-                // Play success sound
-                const audio = new Audio('/notification.mp3');
-                audio.play().catch(console.error);
-              } else {
-                toast.error(`Order placement failed: ${message.data.error || 'Unknown error'}`);
-                // Play error sound (you can use different sound or same)
-                const audio = new Audio('/notification.mp3');
-                audio.play().catch(console.error);
-              }
-            }
+          if (message.type === 'optionChain') {
+            setOptionChainData(message.data);
           }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
-          toast.error('Failed to parse WebSocket message');
         }
       });
 
@@ -89,7 +43,7 @@ export function useWebSocket() {
 
         // Attempt to reconnect with exponential backoff
         const maxAttempts = 5;
-        const baseDelay = 1000; // 1 second
+        const baseDelay = 1000;
 
         if (reconnectAttemptsRef.current < maxAttempts) {
           const delay = Math.min(baseDelay * Math.pow(2, reconnectAttemptsRef.current), 30000);
@@ -127,12 +81,7 @@ export function useWebSocket() {
     }
 
     setIsConnected(false);
-    setSpreadsData(null);
-    setOrderStatus({
-      ordersEnabled: false,
-      orderPlaced: false,
-      entryPrice: null,
-    });
+    setOptionChainData({});
   }, []);
 
   useEffect(() => {
@@ -144,8 +93,7 @@ export function useWebSocket() {
   }, [connect, disconnect]);
 
   return {
-    spreadsData,
-    orderStatus,
+    optionChainData,
     isConnected,
     connect,
     disconnect,

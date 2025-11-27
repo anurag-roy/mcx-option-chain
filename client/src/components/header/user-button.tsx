@@ -1,4 +1,3 @@
-import { useTheme } from '@client/components/theme/theme-provider';
 import { Avatar, AvatarFallback } from '@client/components/ui/avatar';
 import {
   DropdownMenu,
@@ -14,9 +13,9 @@ import {
   DropdownMenuTrigger,
 } from '@client/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@client/components/ui/tooltip';
+import { useTheme } from '@client/hooks/use-theme';
 import { api } from '@client/lib/api';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import {
   AlertCircleIcon,
   Loader2Icon,
@@ -121,18 +120,14 @@ export function UserButton() {
             </DropdownMenuSubContent>
           </DropdownMenuPortal>
         </DropdownMenuSub>
-        <Link to='/settings'>
-          <DropdownMenuItem className='gap-2'>
-            <SettingsIcon className='text-muted-foreground h-4 w-4' />
-            Settings
-          </DropdownMenuItem>
-        </Link>
-        <Link to='/sign-out'>
-          <DropdownMenuItem className='gap-2'>
-            <LogOutIcon className='text-muted-foreground h-4 w-4' />
-            Sign out
-          </DropdownMenuItem>
-        </Link>
+        <DropdownMenuItem className='gap-2'>
+          <SettingsIcon className='text-muted-foreground h-4 w-4' />
+          Settings
+        </DropdownMenuItem>
+        <DropdownMenuItem className='gap-2'>
+          <LogOutIcon className='text-muted-foreground h-4 w-4' />
+          Sign out
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -8,50 +8,106 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root';
-import { Route as IndexRouteImport } from './routes/index';
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as SilverRouteImport } from './routes/silver'
+import { Route as MetalsRouteImport } from './routes/metals'
+import { Route as EnergyRouteImport } from './routes/energy'
+import { Route as IndexRouteImport } from './routes/index'
 
+const SilverRoute = SilverRouteImport.update({
+  id: '/silver',
+  path: '/silver',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MetalsRoute = MetalsRouteImport.update({
+  id: '/metals',
+  path: '/metals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnergyRoute = EnergyRouteImport.update({
+  id: '/energy',
+  path: '/energy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute;
+  '/': typeof IndexRoute
+  '/energy': typeof EnergyRoute
+  '/metals': typeof MetalsRoute
+  '/silver': typeof SilverRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute;
+  '/': typeof IndexRoute
+  '/energy': typeof EnergyRoute
+  '/metals': typeof MetalsRoute
+  '/silver': typeof SilverRoute
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport;
-  '/': typeof IndexRoute;
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/energy': typeof EnergyRoute
+  '/metals': typeof MetalsRoute
+  '/silver': typeof SilverRoute
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: '/';
-  fileRoutesByTo: FileRoutesByTo;
-  to: '/';
-  id: '__root__' | '/';
-  fileRoutesById: FileRoutesById;
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths: '/' | '/energy' | '/metals' | '/silver'
+  fileRoutesByTo: FileRoutesByTo
+  to: '/' | '/energy' | '/metals' | '/silver'
+  id: '__root__' | '/' | '/energy' | '/metals' | '/silver'
+  fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute;
+  IndexRoute: typeof IndexRoute
+  EnergyRoute: typeof EnergyRoute
+  MetalsRoute: typeof MetalsRoute
+  SilverRoute: typeof SilverRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/silver': {
+      id: '/silver'
+      path: '/silver'
+      fullPath: '/silver'
+      preLoaderRoute: typeof SilverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/metals': {
+      id: '/metals'
+      path: '/metals'
+      fullPath: '/metals'
+      preLoaderRoute: typeof MetalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/energy': {
+      id: '/energy'
+      path: '/energy'
+      fullPath: '/energy'
+      preLoaderRoute: typeof EnergyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
-      id: '/';
-      path: '/';
-      fullPath: '/';
-      preLoaderRoute: typeof IndexRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-};
-export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)._addFileTypes<FileRouteTypes>();
+  EnergyRoute: EnergyRoute,
+  MetalsRoute: MetalsRoute,
+  SilverRoute: SilverRoute,
+}
+export const routeTree = rootRouteImport
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()

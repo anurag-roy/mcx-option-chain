@@ -1,21 +1,21 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import path from "node:path";
-import tailwindcss from "@tailwindcss/vite";
-import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import tailwindcss from '@tailwindcss/vite';
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
+import react from '@vitejs/plugin-react';
+import path from 'node:path';
+import { defineConfig } from 'vite';
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     // Tanstack Router
     tanstackRouter({
-      target: "react",
+      target: 'react',
       autoCodeSplitting: true,
     }),
     // React + React Compiler
     react({
       babel: {
-        plugins: [["babel-plugin-react-compiler"]],
+        plugins: [['babel-plugin-react-compiler']],
       },
     }),
     // Tailwind CSS
@@ -23,13 +23,14 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@client": path.resolve(__dirname, "./src"),
-      "@server": path.resolve(__dirname, "../server"),
+      '@client': path.resolve(__dirname, './src'),
+      '@server': path.resolve(__dirname, '../server'),
+      '@shared': path.resolve(__dirname, '../server/shared'),
     },
   },
   server: {
     proxy: {
-      "/api": {
+      '/api': {
         target: `http://localhost:${4000}`,
         changeOrigin: true,
       },

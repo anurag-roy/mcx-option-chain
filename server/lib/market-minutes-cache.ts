@@ -195,6 +195,7 @@ class MarketMinutesCache {
     expiryDate: string,
     optionType: 'CE' | 'PE'
   ): {
+    sigma: number;
     sigmaN: number;
     sigmaX: number;
     sigmaXI: number;
@@ -204,7 +205,7 @@ class MarketMinutesCache {
     const sigmaX = this.calculateSigmaX(sigmaN, expiryDate);
     const sigmaXI = this.calculateSigmaXI(sigmaN, sigmaX, optionType);
 
-    return { sigmaN, sigmaX, sigmaXI };
+    return { sigma, sigmaN, sigmaX, sigmaXI };
   }
 
   /**

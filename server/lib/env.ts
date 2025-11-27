@@ -9,6 +9,10 @@ const envSchema = z.object({
   KITE_API_KEY: z.string(),
   KITE_API_SECRET: z.string(),
   KITE_TOTP_SECRET: z.string(),
+  // Optional: comma-separated list of symbols for worker mode
+  SYMBOLS: z.string().optional(),
+  // Optional: worker ID for logging
+  WORKER_ID: z.coerce.number().optional(),
 });
 
 const { data, error } = envSchema.safeParse(process.env);
