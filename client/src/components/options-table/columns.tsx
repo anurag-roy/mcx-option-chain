@@ -63,7 +63,7 @@ export const columns: ColumnDef<OptionChain>[] = [
   },
   {
     accessorKey: 'returnValue',
-    header: ({ table, column }) => <DataTableColumnHeader table={table} column={column} title='Return Value' />,
+    header: ({ column }) => <DataTableColumnHeader column={column} title='Return Value' />,
     cell: ({ row }) => (
       <div className={cn('p-2 text-right font-semibold tabular-nums', row.original.returnValue > 0 ? green : red)}>
         {row.original.returnValue ? (row.original.returnValue * 100).toFixed(2) : '-'}
@@ -73,7 +73,7 @@ export const columns: ColumnDef<OptionChain>[] = [
   },
   {
     accessorKey: 'strikePosition',
-    header: ({ table, column }) => <DataTableColumnHeader table={table} column={column} title='Strike Position' />,
+    header: ({ column }) => <DataTableColumnHeader column={column} title='Strike Position' />,
     cell: ({ row }) => (
       <div
         className={cn(
@@ -90,7 +90,7 @@ export const columns: ColumnDef<OptionChain>[] = [
   },
   {
     id: 'delta',
-    header: ({ table, column }) => <DataTableColumnHeader table={table} column={column} title='Delta (Δ)' />,
+    header: ({ column }) => <DataTableColumnHeader column={column} title='Delta (Δ)' />,
     accessorFn: (row) => row.delta,
     cell: ({ row }) => {
       const { delta } = row.original;

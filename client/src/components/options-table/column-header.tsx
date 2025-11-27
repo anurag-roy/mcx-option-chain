@@ -7,17 +7,15 @@ import {
   DropdownMenuTrigger,
 } from '@client/components/ui/dropdown-menu';
 import { cn } from '@client/lib/utils';
-import type { Column, Table } from '@tanstack/react-table';
+import type { Column } from '@tanstack/react-table';
 import { ArrowDown, ArrowUp, ArrowUpDown, RotateCcw } from 'lucide-react';
 
 interface DataTableColumnHeaderProps<TData, TValue> extends React.HTMLAttributes<HTMLDivElement> {
-  table: Table<TData>;
   column: Column<TData, TValue>;
   title: string;
 }
 
 export function DataTableColumnHeader<TData, TValue>({
-  table,
   column,
   title,
   className,
@@ -27,7 +25,6 @@ export function DataTableColumnHeader<TData, TValue>({
   }
 
   const isSorted = column.getIsSorted();
-  console.log(`${title} is sorted: ${isSorted}`);
 
   return (
     <div className={cn('flex items-center space-x-2', className)}>
@@ -42,9 +39,9 @@ export function DataTableColumnHeader<TData, TValue>({
             )}
           >
             <span>{title}</span>
-            {column.getIsSorted() === 'desc' ? (
+            {isSorted === 'desc' ? (
               <ArrowDown className='ml-2 h-4 w-4' />
-            ) : column.getIsSorted() === 'asc' ? (
+            ) : isSorted === 'asc' ? (
               <ArrowUp className='ml-2 h-4 w-4' />
             ) : (
               <ArrowUpDown className='ml-2 h-4 w-4' />
@@ -52,31 +49,16 @@ export function DataTableColumnHeader<TData, TValue>({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align='start'>
-          <DropdownMenuItem
-            onClick={() => {
-              column.toggleSorting(false);
-              table.resetPageIndex();
-            }}
-          >
+          <DropdownMenuItem onSelect={() => column.toggleSorting(false)}>
             <ArrowUp className='text-muted-foreground/70 mr-2 h-3.5 w-3.5' />
             Asc
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => {
-              column.toggleSorting(true);
-              table.resetPageIndex();
-            }}
-          >
+          <DropdownMenuItem onSelect={() => column.toggleSorting(true)}>
             <ArrowDown className='text-muted-foreground/70 mr-2 h-3.5 w-3.5' />
             Desc
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => {
-              column.clearSorting();
-              table.resetPageIndex();
-            }}
-          >
+          <DropdownMenuItem onSelect={() => column.clearSorting()}>
             <RotateCcw className='text-muted-foreground/70 mr-2 h-3.5 w-3.5' />
             Reset
           </DropdownMenuItem>

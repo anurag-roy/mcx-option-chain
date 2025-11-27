@@ -14,21 +14,35 @@ const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 app.use('*', httpLogger());
 
-// Client WebSocket management for coordinator mode
-let connectedClient: WSContext | null = null;
+// Multi-client WebSocket management with per-client symbol filtering
+// Map of client -> Set of subscribed symbols (empty set = all symbols)
+const connectedClients = new Map<WSContext, Set<string>>();
 let latestOptionChain: Record<number, OptionChain> = {};
 
 /**
+ * Filter option chain data for a specific set of symbols
+ */
+function filterDataForSymbols(data: Record<number, OptionChain>, symbols: Set<string>): Record<number, OptionChain> {
+  // If no symbols specified, return all data
+  if (symbols.size === 0) {
+    return data;
+  }
+
+  return Object.fromEntries(Object.entries(data).filter(([_, option]) => symbols.has(option.name)));
+}
+
+/**
  * Set the aggregated option chain data from coordinator.
- * This data will be sent to connected clients.
+ * This data will be filtered and sent to all connected clients based on their subscriptions.
  */
 export function setOptionChainData(data: Record<number, OptionChain>) {
   latestOptionChain = data;
 
-  // Send to connected client if any
-  if (connectedClient) {
+  // Send filtered data to each connected client
+  for (const [client, symbols] of connectedClients) {
     try {
-      connectedClient.send(JSON.stringify({ type: 'optionChain', data: latestOptionChain }));
+      const filteredData = filterDataForSymbols(latestOptionChain, symbols);
+      client.send(JSON.stringify({ type: 'optionChain', data: filteredData }));
     } catch (error) {
       logger.error('Failed to send option chain to client:', error);
     }
@@ -42,20 +56,33 @@ const apiRoutes = app
     '/ws',
     upgradeWebSocket(() => ({
       onOpen: (_event, ws) => {
-        if (connectedClient) {
-          logger.warn('New client connected, replacing existing client');
-        }
-        connectedClient = ws;
-        logger.info('Client connected to WebSocket');
+        // Add client with empty symbol set (will receive all data until they subscribe)
+        connectedClients.set(ws, new Set());
+        logger.info(`Client connected. Total clients: ${connectedClients.size}`);
+      },
+      onMessage: (event, ws) => {
+        try {
+          const message = JSON.parse(event.data.toString());
 
-        // Send latest data immediately if available
-        if (Object.keys(latestOptionChain).length > 0) {
-          ws.send(JSON.stringify({ type: 'optionChain', data: latestOptionChain }));
+          if (message.type === 'subscribe' && Array.isArray(message.symbols)) {
+            const symbols = new Set<string>(message.symbols);
+            connectedClients.set(ws, symbols);
+            logger.info(`Client subscribed to symbols: ${message.symbols.join(', ')}`);
+
+            // Send initial filtered data immediately
+            if (Object.keys(latestOptionChain).length > 0) {
+              const filteredData = filterDataForSymbols(latestOptionChain, symbols);
+              ws.send(JSON.stringify({ type: 'optionChain', data: filteredData }));
+              logger.info(`Sent initial data: ${Object.keys(filteredData).length} instruments`);
+            }
+          }
+        } catch (error) {
+          logger.error('Failed to parse WebSocket message:', error);
         }
       },
-      onClose: () => {
-        connectedClient = null;
-        logger.info('Client disconnected from WebSocket');
+      onClose: (_event, ws) => {
+        connectedClients.delete(ws);
+        logger.info(`Client disconnected. Total clients: ${connectedClients.size}`);
       },
     }))
   );
