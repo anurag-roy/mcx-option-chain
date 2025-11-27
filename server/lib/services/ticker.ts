@@ -17,6 +17,11 @@ import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
 
 export type OptionChainCallback = (data: Record<number, OptionChain>) => void;
 
+interface ClientSubscription {
+  ws: WSContext;
+  symbols: Set<Symbol>;
+}
+
 export class TickerService {
   private readonly OPTION_CHAIN_UPDATE_INTERVAL = 500;
   private readonly MARGIN_UPDATE_INTERVAL = 5000;
@@ -25,7 +30,7 @@ export class TickerService {
     api_key: env.KITE_API_KEY,
     access_token: accessToken,
   });
-  private client: WSContext | null = null;
+  private clients: Map<string, ClientSubscription> = new Map();
   private subscribedTokens = new Set<number>();
 
   /**
@@ -153,14 +158,20 @@ export class TickerService {
 
     // Update option chain
     setInterval(() => {
-      const options = this.calculateOptions();
+      const optionsArray = this.calculateOptions();
 
-      // Publish option chain data via callback (worker mode) or WS client
-      if (options.length > 0) {
+      // Publish option chain data via callback (worker mode) or WS clients
+      if (optionsArray.length > 0) {
         if (this.dataCallback) {
-          this.dataCallback(options);
-        } else if (this.client) {
-          this.client.send(JSON.stringify({ type: 'optionChain', data: options }));
+          // Worker mode: send all data via callback
+          const optionsMap: Record<number, OptionChain> = {};
+          for (const option of optionsArray) {
+            optionsMap[option.instrumentToken] = option;
+          }
+          this.dataCallback(optionsMap);
+        } else {
+          // WebSocket mode: send filtered data to each client based on subscriptions
+          this.sendToClients(optionsArray);
         }
       }
 
@@ -423,15 +434,114 @@ export class TickerService {
     logger.info(`Subscribed to ${this.subscribedTokens.size} tokens`);
   }
 
-  public addClient(client: WSContext) {
-    if (this.client) {
-      throw new Error('Client already connected');
+  /**
+   * Send option chain updates to all connected clients based on their subscriptions
+   */
+  private sendToClients(options: OptionChain[]) {
+    for (const [clientId, subscription] of this.clients.entries()) {
+      try {
+        // Filter options based on client's subscribed symbols
+        const filteredOptions: Record<number, OptionChain> = {};
+        for (const option of options) {
+          if (subscription.symbols.has(option.name as Symbol)) {
+            filteredOptions[option.instrumentToken] = option;
+          }
+        }
+
+        // Only send if there's data for this client
+        if (Object.keys(filteredOptions).length > 0) {
+          subscription.ws.send(JSON.stringify({ type: 'optionChain', data: filteredOptions }));
+        }
+      } catch (error) {
+        logger.error(`Error sending to client ${clientId}:`, error);
+        // Remove dead client
+        this.clients.delete(clientId);
+      }
     }
-    this.client = client;
   }
 
-  public removeClient() {
-    this.client = null;
+  /**
+   * Add a new WebSocket client
+   */
+  public addClient(clientId: string, client: WSContext) {
+    this.clients.set(clientId, {
+      ws: client,
+      symbols: new Set(),
+    });
+    logger.info(`Client ${clientId} connected. Total clients: ${this.clients.size}`);
+  }
+
+  /**
+   * Remove a WebSocket client
+   */
+  public removeClient(clientId: string) {
+    this.clients.delete(clientId);
+    logger.info(`Client ${clientId} disconnected. Total clients: ${this.clients.size}`);
+  }
+
+  /**
+   * Subscribe a client to specific symbols
+   */
+  public subscribeClient(clientId: string, symbols: Symbol[]) {
+    const subscription = this.clients.get(clientId);
+    if (!subscription) {
+      logger.warn(`Cannot subscribe: client ${clientId} not found`);
+      return;
+    }
+
+    // Add symbols to subscription
+    for (const symbol of symbols) {
+      subscription.symbols.add(symbol);
+    }
+
+    logger.info(`Client ${clientId} subscribed to: ${symbols.join(', ')}`);
+
+    // Send initial data for subscribed symbols
+    this.sendInitialData(clientId);
+  }
+
+  /**
+   * Unsubscribe a client from specific symbols
+   */
+  public unsubscribeClient(clientId: string, symbols: Symbol[]) {
+    const subscription = this.clients.get(clientId);
+    if (!subscription) {
+      return;
+    }
+
+    for (const symbol of symbols) {
+      subscription.symbols.delete(symbol);
+    }
+
+    logger.info(`Client ${clientId} unsubscribed from: ${symbols.join(', ')}`);
+  }
+
+  /**
+   * Send initial option chain snapshot to a client
+   */
+  private sendInitialData(clientId: string) {
+    const subscription = this.clients.get(clientId);
+    if (!subscription) {
+      return;
+    }
+
+    // Filter option chain based on client's subscribed symbols
+    const filteredOptions: Record<number, OptionChain> = {};
+    for (const [token, option] of Object.entries(this.optionChain)) {
+      if (subscription.symbols.has(option.name as Symbol)) {
+        filteredOptions[Number(token)] = option;
+      }
+    }
+
+    // Send initial data
+    if (Object.keys(filteredOptions).length > 0) {
+      try {
+        subscription.ws.send(JSON.stringify({ type: 'optionChain', data: filteredOptions }));
+        logger.info(`Sent initial data to client ${clientId}: ${Object.keys(filteredOptions).length} instruments`);
+      } catch (error) {
+        logger.error(`Error sending initial data to client ${clientId}:`, error);
+      }
+    }
   }
 
   public async disconnect() {

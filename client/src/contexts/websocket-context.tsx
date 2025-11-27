@@ -7,6 +7,8 @@ interface WebSocketContextType {
   isConnected: boolean;
   connect: () => void;
   disconnect: () => void;
+  subscribe: (symbols: string[]) => void;
+  unsubscribe: (symbols: string[]) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -22,10 +24,11 @@ export function useWebSocketContext() {
 
 interface WebSocketProviderProps {
   children: ReactNode;
+  symbols?: string[];
 }
 
-export function WebSocketProvider({ children }: WebSocketProviderProps) {
-  const webSocketData = useWebSocket();
+export function WebSocketProvider({ children, symbols }: WebSocketProviderProps) {
+  const webSocketData = useWebSocket(symbols);
 
   return <WebSocketContext.Provider value={webSocketData}>{children}</WebSocketContext.Provider>;
 }

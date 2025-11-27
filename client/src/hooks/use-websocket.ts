@@ -4,12 +4,14 @@ import { toast } from 'sonner';
 
 type WebSocketMessage = { type: 'optionChain'; data: OptionChainData };
 
-export function useWebSocket() {
+export function useWebSocket(subscribedSymbols?: string[]) {
   const [optionChainData, setOptionChainData] = useState<OptionChainData>({});
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  const subscribedSymbolsRef = useRef<string[]>(subscribedSymbols ?? []);
+  const pendingSubscriptionsRef = useRef<string[]>([]);
 
   const connect = useCallback(() => {
     try {
@@ -23,6 +25,20 @@ export function useWebSocket() {
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
         console.log('WebSocket connected');
+
+        // Send subscription message for initial symbols
+        if (subscribedSymbolsRef.current.length > 0) {
+          ws.send(JSON.stringify({ type: 'subscribe', symbols: subscribedSymbolsRef.current }));
+          console.log('Subscribed to symbols:', subscribedSymbolsRef.current);
+        }
+
+        // Send any pending subscriptions that were queued before connection opened
+        if (pendingSubscriptionsRef.current.length > 0) {
+          ws.send(JSON.stringify({ type: 'subscribe', symbols: pendingSubscriptionsRef.current }));
+          console.log('Subscribed to pending symbols:', pendingSubscriptionsRef.current);
+          subscribedSymbolsRef.current = [...new Set([...subscribedSymbolsRef.current, ...pendingSubscriptionsRef.current])];
+          pendingSubscriptionsRef.current = [];
+        }
       });
 
       ws.addEventListener('message', (event) => {
@@ -82,6 +98,8 @@ export function useWebSocket() {
 
     setIsConnected(false);
     setOptionChainData({});
+    pendingSubscriptionsRef.current = [];
+    subscribedSymbolsRef.current = [];
   }, []);
 
   useEffect(() => {
@@ -92,10 +110,43 @@ export function useWebSocket() {
     };
   }, [connect, disconnect]);
 
+  // Update subscribed symbols when they change
+  useEffect(() => {
+    subscribedSymbolsRef.current = subscribedSymbols ?? [];
+    
+    // If already connected, send new subscription
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && subscribedSymbols && subscribedSymbols.length > 0) {
+      wsRef.current.send(JSON.stringify({ type: 'subscribe', symbols: subscribedSymbols }));
+      console.log('Updated subscription to symbols:', subscribedSymbols);
+    }
+  }, [subscribedSymbols]);
+
+  const subscribe = useCallback((symbols: string[]) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Connection is open, send immediately
+      wsRef.current.send(JSON.stringify({ type: 'subscribe', symbols }));
+      subscribedSymbolsRef.current = [...new Set([...subscribedSymbolsRef.current, ...symbols])];
+      console.log('Subscribed to symbols:', symbols);
+    } else {
+      // Connection not open yet, queue for later
+      pendingSubscriptionsRef.current = [...new Set([...pendingSubscriptionsRef.current, ...symbols])];
+      console.log('Queued subscription for symbols (connection not ready):', symbols);
+    }
+  }, []);
+
+  const unsubscribe = useCallback((symbols: string[]) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'unsubscribe', symbols }));
+      console.log('Unsubscribed from symbols:', symbols);
+    }
+  }, []);
+
   return {
     optionChainData,
     isConnected,
     connect,
     disconnect,
+    subscribe,
+    unsubscribe,
   };
 }
