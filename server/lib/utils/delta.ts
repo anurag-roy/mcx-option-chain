@@ -41,7 +41,7 @@ export const calculateDeltas = (
 
   // Calculate Call Delta
   if (type === 'CE') {
-    return nd1;
+    return 1 - nd1;
   } else {
     return nd1 - 1;
   }
