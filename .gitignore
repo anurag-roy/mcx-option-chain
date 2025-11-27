@@ -166,3 +166,4 @@ vite.config.ts.timestamp-*
 
 .data/*
 !.data/.gitkeep
+!.data/mcx_holidays.csv

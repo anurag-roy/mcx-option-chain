@@ -11,6 +11,7 @@ interface WebSocketContextType {
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useWebSocketContext() {
   const context = useContext(WebSocketContext);
   if (!context) {
@@ -28,4 +29,3 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
 
   return <WebSocketContext.Provider value={webSocketData}>{children}</WebSocketContext.Provider>;
 }
-

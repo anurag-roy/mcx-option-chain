@@ -185,7 +185,7 @@ class TickerService {
 
   private async updateOrderMargins() {
     this.isFetchingMargins = true;
-    const options = Object.values(this.optionChain);
+    const options = Object.values(this.optionChain).filter((o) => o.sellValue > o.returnValue);
     if (options.length > 0) {
       const tsToTokenMap: Record<string, number> = {};
       for (const option of options) {

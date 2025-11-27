@@ -1,4 +1,5 @@
-import { columns, DataTable } from '@client/components/options-table';
+import { columns } from '@client/components/options-table/columns';
+import { DataTable } from '@client/components/options-table/data-table';
 import type { OptionChain, OptionChainData } from '@client/types/option-chain';
 import { useMemo } from 'react';
 

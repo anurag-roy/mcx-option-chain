@@ -1,7 +1,7 @@
 import { DisplayError } from '@client/components/error';
 import { DisplayLoading } from '@client/components/loading';
 import { NotFound } from '@client/components/not-found';
-import { ThemeProvider } from '@client/components/theme/theme-provider';
+import { ThemeProvider } from '@client/contexts/theme-context';
 import { routeTree } from '@client/routeTree.gen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';

@@ -47,11 +47,11 @@ export const SYMBOL_GROUPS = {
  */
 export const PAGE_CONFIGS = [
   {
-    id: 'metals',
+    id: 'gold',
     name: 'Yellow Metals',
     description: 'Gold and Copper options',
     icon: '🥇',
-    path: '/metals',
+    path: '/gold',
     tables: [
       { name: 'Gold', symbols: ['GOLD', 'GOLDM'] },
       { name: 'Copper', symbols: ['COPPER'] },

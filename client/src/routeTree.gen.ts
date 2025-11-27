@@ -10,7 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SilverRouteImport } from './routes/silver'
-import { Route as MetalsRouteImport } from './routes/metals'
+import { Route as GoldRouteImport } from './routes/gold'
 import { Route as EnergyRouteImport } from './routes/energy'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -19,9 +19,9 @@ const SilverRoute = SilverRouteImport.update({
   path: '/silver',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MetalsRoute = MetalsRouteImport.update({
-  id: '/metals',
-  path: '/metals',
+const GoldRoute = GoldRouteImport.update({
+  id: '/gold',
+  path: '/gold',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EnergyRoute = EnergyRouteImport.update({
@@ -38,34 +38,34 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/energy': typeof EnergyRoute
-  '/metals': typeof MetalsRoute
+  '/gold': typeof GoldRoute
   '/silver': typeof SilverRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/energy': typeof EnergyRoute
-  '/metals': typeof MetalsRoute
+  '/gold': typeof GoldRoute
   '/silver': typeof SilverRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/energy': typeof EnergyRoute
-  '/metals': typeof MetalsRoute
+  '/gold': typeof GoldRoute
   '/silver': typeof SilverRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/energy' | '/metals' | '/silver'
+  fullPaths: '/' | '/energy' | '/gold' | '/silver'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/energy' | '/metals' | '/silver'
-  id: '__root__' | '/' | '/energy' | '/metals' | '/silver'
+  to: '/' | '/energy' | '/gold' | '/silver'
+  id: '__root__' | '/' | '/energy' | '/gold' | '/silver'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   EnergyRoute: typeof EnergyRoute
-  MetalsRoute: typeof MetalsRoute
+  GoldRoute: typeof GoldRoute
   SilverRoute: typeof SilverRoute
 }
 
@@ -78,11 +78,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SilverRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/metals': {
-      id: '/metals'
-      path: '/metals'
-      fullPath: '/metals'
-      preLoaderRoute: typeof MetalsRouteImport
+    '/gold': {
+      id: '/gold'
+      path: '/gold'
+      fullPath: '/gold'
+      preLoaderRoute: typeof GoldRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/energy': {
@@ -105,7 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   EnergyRoute: EnergyRoute,
-  MetalsRoute: MetalsRoute,
+  GoldRoute: GoldRoute,
   SilverRoute: SilverRoute,
 }
 export const routeTree = rootRouteImport
