@@ -29,7 +29,7 @@ const workers: ChildProcess[] = [];
 const workerReadyPromises: Promise<void>[] = [];
 
 // SD multiplier for subscriptions (can be made configurable)
-const SD_MULTIPLIER = 1;
+const SD_MULTIPLIER = 2.05;
 
 async function main() {
   // Verify Kite session before starting workers
