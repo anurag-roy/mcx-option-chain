@@ -195,50 +195,33 @@ export class TickerService {
 
   private async updateOrderMargins() {
     this.isFetchingMargins = true;
-    const options = Object.values(this.optionChain).filter((o) => o.sellValue > o.returnValue);
+    const options = Object.values(this.optionChain);
     if (options.length > 0) {
       const tsToTokenMap: Record<string, number> = {};
       for (const option of options) {
         tsToTokenMap[option.tradingsymbol] = option.instrumentToken;
       }
 
-      const chunks = chunk(options, 400);
+      const chunks = chunk(
+        options.map((o) => o.tradingsymbol),
+        400
+      );
 
-      for (const chunk of chunks) {
-        const orders = chunk.map((option) => ({
-          exchange: 'MCX' as const,
-          order_type: 'LIMIT' as const,
-          product: option.product,
-          quantity: 1,
-          tradingsymbol: option.tradingsymbol,
-          transaction_type: 'SELL' as const,
-          variety: 'regular' as const,
-        }));
-
+      for (const tradingSymbols of chunks) {
         try {
-          const margins = await getOrderMargins(orders);
+          const margins = await getOrderMargins(tradingSymbols);
 
           for (const margin of margins) {
             const token = tsToTokenMap[margin.tradingsymbol];
             if (token) {
               const foundOption = this.optionChain[token];
-              if (!foundOption) {
-                logger.warn(`Option not found for ${margin.tradingsymbol} in option chain`);
-                continue;
-              }
-
-              if (margin.total) {
+              if (foundOption) {
                 foundOption.orderMargin = margin.total;
               } else {
-                if (foundOption.product === 'MIS') {
-                  logger.warn(`No margin found for ${margin.tradingsymbol} as MIS. Will try NRML next time.`);
-                  foundOption.product = 'NRML';
-                } else {
-                  logger.warn(`No margin found for ${margin.tradingsymbol} even as NRML.`);
-                }
+                logger.error(`Option not found for ${margin.tradingsymbol}`);
               }
             } else {
-              logger.warn(`Token not found for ${margin.tradingsymbol}`);
+              logger.error(`Token not found for ${margin.tradingsymbol}`);
             }
           }
         } catch (error) {
@@ -409,7 +392,6 @@ export class TickerService {
       for (const instrument of filteredInstruments) {
         this.optionChain[instrument.instrumentToken] = {
           ...instrument,
-          product: 'MIS',
           futExpiry,
           underlyingLtp: ltp,
           bid: 0,

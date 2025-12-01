@@ -2,7 +2,6 @@ import type { instrumentsTable } from '@server/db/schema';
 
 type Instrument = typeof instrumentsTable.$inferSelect;
 export type OptionChain = Instrument & {
-  product: 'MIS' | 'NRML';
   /**
    * Expiry of the corresponding FUT
    */
