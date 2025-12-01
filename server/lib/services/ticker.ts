@@ -202,18 +202,15 @@ export class TickerService {
         tsToTokenMap[option.tradingsymbol] = option.instrumentToken;
       }
 
-      const chunks = chunk(
-        options.map((o) => o.tradingsymbol),
-        400
-      );
+      const chunks = chunk(options, 400);
 
-      for (const tradingsymbols of chunks) {
-        const orders = tradingsymbols.map((tradingsymbol) => ({
+      for (const chunk of chunks) {
+        const orders = chunk.map((option) => ({
           exchange: 'MCX' as const,
           order_type: 'LIMIT' as const,
-          product: 'MIS' as const,
+          product: option.product,
           quantity: 1,
-          tradingsymbol: tradingsymbol,
+          tradingsymbol: option.tradingsymbol,
           transaction_type: 'SELL' as const,
           variety: 'regular' as const,
         }));
@@ -224,7 +221,24 @@ export class TickerService {
           for (const margin of margins) {
             const token = tsToTokenMap[margin.tradingsymbol];
             if (token) {
-              this.optionChain[token]!.orderMargin = margin.total;
+              const foundOption = this.optionChain[token];
+              if (!foundOption) {
+                logger.warn(`Option not found for ${margin.tradingsymbol} in option chain`);
+                continue;
+              }
+
+              if (margin.total) {
+                foundOption.orderMargin = margin.total;
+              } else {
+                if (foundOption.product === 'MIS') {
+                  logger.warn(`No margin found for ${margin.tradingsymbol} as MIS. Will try NRML next time.`);
+                  foundOption.product = 'NRML';
+                } else {
+                  logger.warn(`No margin found for ${margin.tradingsymbol} even as NRML.`);
+                }
+              }
+            } else {
+              logger.warn(`Token not found for ${margin.tradingsymbol}`);
             }
           }
         } catch (error) {
@@ -395,6 +409,7 @@ export class TickerService {
       for (const instrument of filteredInstruments) {
         this.optionChain[instrument.instrumentToken] = {
           ...instrument,
+          product: 'MIS',
           futExpiry,
           underlyingLtp: ltp,
           bid: 0,
