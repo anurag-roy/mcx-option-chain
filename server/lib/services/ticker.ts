@@ -251,10 +251,9 @@ export class TickerService {
       instrument.strikePosition =
         (Math.abs(instrument.strike! - instrument.underlyingLtp) * 100) / instrument.underlyingLtp;
       if (instrument.bid) {
-        instrument.sellValue = (instrument.bid - bidBalance) * instrument.lotSize!;
+        instrument.sellValue = (instrument.bid - bidBalance) * instrument.lotSize! * multiplier;
         if (instrument.orderMargin > 0) {
-          instrument.returnValue =
-            ((instrument.bid - bidBalance) * instrument.lotSize! * multiplier) / instrument.orderMargin;
+          instrument.returnValue = instrument.sellValue / instrument.orderMargin;
         }
       }
 
