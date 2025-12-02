@@ -5,7 +5,6 @@ import { ThemeProvider } from '@client/contexts/theme-context';
 import { routeTree } from '@client/routeTree.gen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
-import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 
 // Create a client
@@ -39,8 +38,4 @@ export function App() {
 }
 
 // Render the app
-createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+createRoot(document.getElementById('root')!).render(<App />);

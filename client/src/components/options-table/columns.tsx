@@ -63,7 +63,9 @@ export const columns: ColumnDef<OptionChain>[] = [
   },
   {
     accessorKey: 'returnValue',
-    header: ({ table, column }) => <DataTableColumnHeader table={table} column={column} title='Return Value' />,
+    header: ({ table, column }) => (
+      <DataTableColumnHeader table={table} column={column} title='RV' tooltip='Return Value' />
+    ),
     cell: ({ row }) => (
       <div className={cn('p-2 text-right font-semibold tabular-nums', row.original.returnValue > 0 ? green : red)}>
         {row.original.returnValue ? (row.original.returnValue * 100).toFixed(2) : '-'}
@@ -73,7 +75,9 @@ export const columns: ColumnDef<OptionChain>[] = [
   },
   {
     accessorKey: 'strikePosition',
-    header: ({ table, column }) => <DataTableColumnHeader table={table} column={column} title='Strike Position' />,
+    header: ({ table, column }) => (
+      <DataTableColumnHeader table={table} column={column} title='SP' tooltip='Strike Price' />
+    ),
     cell: ({ row }) => (
       <div
         className={cn(

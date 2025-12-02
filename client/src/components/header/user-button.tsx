@@ -17,16 +17,15 @@ import { useTheme } from '@client/hooks/use-theme';
 import { api } from '@client/lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import {
-  AlertCircleIcon,
-  Loader2Icon,
-  LogOutIcon,
-  MonitorIcon,
-  MoonIcon,
-  SettingsIcon,
-  SunIcon,
-  SunMoonIcon,
-} from 'lucide-react';
+import { AlertCircleIcon, Loader2Icon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon, SunMoonIcon } from 'lucide-react';
+
+const getUserInitials = (name: string) => {
+  const nameParts = name.split(' ').filter(Boolean);
+  if (nameParts.length === 1) {
+    return nameParts[0].slice(0, 2).toUpperCase();
+  }
+  return nameParts[0].slice(0, 1).toUpperCase() + nameParts[1].slice(0, 1).toUpperCase();
+};
 
 export function UserButton() {
   const {
@@ -39,6 +38,10 @@ export function UserButton() {
       const res = await api.user.$get();
       return res.json();
     },
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: Number.POSITIVE_INFINITY,
+    staleTime: Number.POSITIVE_INFINITY,
   });
   const { theme, setTheme } = useTheme();
 
@@ -60,7 +63,8 @@ export function UserButton() {
     );
   }
 
-  const nameInitials = userProfile?.user_name.slice(0, 2).toUpperCase();
+  // const nameInitials = userProfile?.user_name.slice(0, 2).toUpperCase();
+  const nameInitials = getUserInitials(userProfile?.user_name || 'User');
 
   const UserAvatar = () => (
     <Avatar className='h-8 w-8 rounded-full'>
@@ -126,10 +130,6 @@ export function UserButton() {
             <SettingsIcon className='text-muted-foreground h-4 w-4' />
             Settings
           </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem className='gap-2'>
-          <LogOutIcon className='text-muted-foreground h-4 w-4' />
-          Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

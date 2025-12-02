@@ -15,10 +15,7 @@ export function useWebSocket(subscribedSymbols?: string[]) {
 
   const connect = useCallback(() => {
     try {
-      const wsUrl = new URL('/api/ws', window.location.href);
-      wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-
-      const ws = new WebSocket(wsUrl.toString());
+      const ws = new WebSocket('/api/ws');
       wsRef.current = ws;
 
       ws.addEventListener('open', () => {

@@ -32,52 +32,50 @@ export const DataTable = memo(function DataTable({ columns, data }: DataTablePro
   });
 
   return (
-    <div className='rounded-md border'>
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id} className='divide-x'>
-              {headerGroup.headers.map((header) => {
+    <Table>
+      <TableHeader>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <TableRow key={headerGroup.id} className='divide-x'>
+            {headerGroup.headers.map((header) => {
+              return (
+                <TableHead
+                  key={header.id}
+                  className={cn('text-xs', numericCols.includes(header.getContext().column.id) ? 'text-right' : '')}
+                >
+                  {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {table.getRowModel().rows?.length ? (
+          table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'} className='divide-x'>
+              {row.getVisibleCells().map((cell) => {
                 return (
-                  <TableHead
-                    key={header.id}
-                    className={cn('text-xs', numericCols.includes(header.getContext().column.id) ? 'text-right' : '')}
+                  <TableCell
+                    key={cell.id}
+                    className={cn(
+                      'p-0',
+                      numericCols.includes(cell.getContext().column.id) ? 'text-right tabular-nums' : ''
+                    )}
                   >
-                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
                 );
               })}
             </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'} className='divide-x'>
-                {row.getVisibleCells().map((cell) => {
-                  return (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(
-                        'p-0',
-                        numericCols.includes(cell.getContext().column.id) ? 'text-right tabular-nums' : ''
-                      )}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className='h-24 text-center'>
-                No results.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
+          ))
+        ) : (
+          <TableRow>
+            <TableCell colSpan={columns.length} className='h-24 text-center'>
+              No results.
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
   );
 });
