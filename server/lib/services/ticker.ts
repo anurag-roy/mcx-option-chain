@@ -276,7 +276,7 @@ export class TickerService {
       instrument.delta = calculateDeltas(
         instrument.underlyingLtp,
         instrument.strike!,
-        av,
+        av / 100,
         T,
         instrument.instrumentType as 'CE' | 'PE'
       );
