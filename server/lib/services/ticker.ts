@@ -169,18 +169,17 @@ export class TickerService {
       const optionsArray = this.calculateOptions();
 
       // Publish option chain data via callback (worker mode) or WS clients
-      if (optionsArray.length > 0) {
-        if (this.dataCallback) {
-          // Worker mode: send all data via callback
-          const optionsMap: Record<number, OptionChain> = {};
-          for (const option of optionsArray) {
-            optionsMap[option.instrumentToken] = option;
-          }
-          this.dataCallback(optionsMap);
-        } else {
-          // WebSocket mode: send filtered data to each client based on subscriptions
-          this.sendToClients(optionsArray);
+      // Always send data, even if empty, to allow UI to clear when no options match
+      if (this.dataCallback) {
+        // Worker mode: send all data via callback
+        const optionsMap: Record<number, OptionChain> = {};
+        for (const option of optionsArray) {
+          optionsMap[option.instrumentToken] = option;
         }
+        this.dataCallback(optionsMap);
+      } else {
+        // WebSocket mode: send filtered data to each client based on subscriptions
+        this.sendToClients(optionsArray);
       }
 
       // import { json2csv } from 'json-2-csv';

@@ -55,10 +55,8 @@ export function setOptionChainData(data: Record<number, OptionChain>) {
         }
       }
 
-      // Only send if there's data for this client
-      if (Object.keys(filteredData).length > 0) {
-        subscription.ws.send(JSON.stringify({ type: 'optionChain', data: filteredData }));
-      }
+      // Always send data to client, even if empty (allows clearing the UI)
+      subscription.ws.send(JSON.stringify({ type: 'optionChain', data: filteredData }));
     } catch (error) {
       logger.error(`Failed to send option chain to client ${clientId}:`, error);
       // Remove dead client

@@ -25,6 +25,9 @@ const __dirname = path.dirname(__filename);
 // Aggregated option chain data from all workers
 const aggregatedOptionChain: Record<number, OptionChain> = {};
 
+// Track which tokens belong to which worker (for proper cleanup on resubscription)
+const workerTokens: Map<number, Set<number>> = new Map();
+
 // Track worker processes
 const workers: ChildProcess[] = [];
 const workerReadyPromises: Promise<void>[] = [];
@@ -80,7 +83,17 @@ async function main() {
           logger.info(`Worker ${i + 1} is ready (symbols: ${symbols.join(', ')})`);
           resolve();
         } else if (msg.type === 'optionChain') {
-          // Merge option chain data from worker into aggregated data
+          // Remove old tokens from this worker before adding new ones
+          const oldTokens = workerTokens.get(i) ?? new Set();
+          for (const token of oldTokens) {
+            delete aggregatedOptionChain[token];
+          }
+
+          // Track new tokens for this worker
+          const newTokens = new Set(Object.keys(msg.data).map(Number));
+          workerTokens.set(i, newTokens);
+
+          // Add new data from worker
           Object.assign(aggregatedOptionChain, msg.data);
         } else if (msg.type === 'error') {
           clearTimeout(timeoutId);
@@ -142,10 +155,9 @@ async function main() {
   }
 
   // Update the app with aggregated option chain data periodically
+  // Always send data, even if empty, to allow UI to show empty table when no options match
   setInterval(() => {
-    if (Object.keys(aggregatedOptionChain).length > 0) {
-      setOptionChainData(aggregatedOptionChain);
-    }
+    setOptionChainData(aggregatedOptionChain);
   }, 250);
 }
 
