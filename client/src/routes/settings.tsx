@@ -119,6 +119,8 @@ function RouteComponent() {
     setIsUpdating(true);
     try {
       updateSdMultiplier(value);
+      // Immediately update the cache so header reflects the new value
+      queryClient.setQueryData(['sdMultiplier'], { value });
       toast.success(`SD Multiplier updated to ${value}. Resubscribing to options...`);
     } catch (error) {
       toast.error('Failed to update SD Multiplier');

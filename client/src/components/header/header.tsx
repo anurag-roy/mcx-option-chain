@@ -1,4 +1,6 @@
+import { api } from '@client/lib/api';
 import { PAGE_CONFIGS } from '@client/types/option-chain';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation } from '@tanstack/react-router';
 import { UserButton } from './user-button';
 
@@ -8,6 +10,15 @@ interface HeaderProps {
 
 export function Header({ isConnected }: HeaderProps) {
   const location = useLocation();
+
+  const { data: sdData } = useQuery({
+    queryKey: ['sdMultiplier'],
+    queryFn: async () => {
+      const res = await api.settings['sd-multiplier'].$get();
+      return res.json();
+    },
+    refetchInterval: 5000, // Refresh every 5 seconds to stay in sync
+  });
 
   return (
     <div className='border-border bg-background sticky top-0 z-10 border-b py-4'>
@@ -42,6 +53,17 @@ export function Header({ isConnected }: HeaderProps) {
         </div>
 
         <div className='flex items-center gap-4'>
+          {/* SD Multiplier Pill */}
+          {sdData?.value !== undefined && (
+            <Link
+              to='/settings'
+              className='bg-primary/10 text-primary hover:bg-primary/20 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium transition-colors'
+            >
+              <span className='text-primary/70'>SD</span>
+              <span>{sdData.value}</span>
+            </Link>
+          )}
+
           {/* Connection Status */}
           <div className='flex items-center gap-2'>
             <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />

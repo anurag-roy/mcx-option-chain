@@ -15,7 +15,6 @@ interface CommodityPageProps {
 
 export function CommodityPage({ title, tables }: CommodityPageProps) {
   const { optionChainData, isConnected, subscribe } = useWebSocketContext();
-  const hasData = Object.keys(optionChainData).length > 0;
 
   // Extract all symbols from tables
   const symbols = useMemo(() => {
@@ -45,14 +44,12 @@ export function CommodityPage({ title, tables }: CommodityPageProps) {
       </div>
 
       {/* Content */}
-      {!hasData ? (
+      {!isConnected ? (
         <Card>
           <CardContent className='flex items-center justify-center py-16'>
             <div className='text-center'>
-              <p className='text-muted-foreground text-lg font-medium'>
-                {isConnected ? 'Waiting for data...' : 'Connecting to server...'}
-              </p>
-              <p className='text-muted-foreground mt-1 text-sm'>Option chain data will appear here once available</p>
+              <p className='text-muted-foreground text-lg font-medium'>Connecting to server...</p>
+              <p className='text-muted-foreground mt-1 text-sm'>Option chain data will appear here once connected</p>
             </div>
           </CardContent>
         </Card>
