@@ -17,7 +17,16 @@ import { useTheme } from '@client/hooks/use-theme';
 import { api } from '@client/lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertCircleIcon, Loader2Icon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon, SunMoonIcon } from 'lucide-react';
+import {
+  AlertCircleIcon,
+  Loader2Icon,
+  MonitorIcon,
+  MoonIcon,
+  SettingsIcon,
+  SunIcon,
+  SunMoonIcon,
+  XIcon,
+} from 'lucide-react';
 
 const getUserInitials = (name: string) => {
   const nameParts = name.split(' ').filter(Boolean);
@@ -27,7 +36,11 @@ const getUserInitials = (name: string) => {
   return nameParts[0].slice(0, 1).toUpperCase() + nameParts[1].slice(0, 1).toUpperCase();
 };
 
-export function UserButton() {
+interface UserButtonProps {
+  isConnected: boolean;
+}
+
+export function UserButton({ isConnected }: UserButtonProps) {
   const {
     data: userProfile,
     isLoading,
@@ -66,19 +79,41 @@ export function UserButton() {
   // const nameInitials = userProfile?.user_name.slice(0, 2).toUpperCase();
   const nameInitials = getUserInitials(userProfile?.user_name || 'User');
 
-  const UserAvatar = () => (
-    <Avatar className='h-8 w-8 rounded-full'>
+  const UserAvatar = ({ showStatus = false }: { showStatus?: boolean }) => (
+    <div className='relative'>
       <Avatar className='h-8 w-8 rounded-full'>
         <AvatarFallback className='rounded-full text-sm'>{nameInitials}</AvatarFallback>
       </Avatar>
-    </Avatar>
+      {showStatus && (
+        <>
+          {isConnected ? (
+            <span className='absolute -bottom-0.5 -left-0.5 flex h-3 w-3 items-center justify-center rounded-full border-2 border-background bg-emerald-500' />
+          ) : (
+            <span className='absolute -bottom-0.5 -left-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-background bg-red-500'>
+              <XIcon className='h-2 w-2 text-white' strokeWidth={3} />
+            </span>
+          )}
+        </>
+      )}
+    </div>
   );
+
+  const avatarWithStatus = <UserAvatar showStatus />;
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className='rounded-full'>
-        <UserAvatar />
-      </DropdownMenuTrigger>
+      {isConnected ? (
+        <DropdownMenuTrigger className='rounded-full'>{avatarWithStatus}</DropdownMenuTrigger>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger className='rounded-full'>{avatarWithStatus}</DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Disconnected from server</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
       <DropdownMenuContent className='w-48 max-w-48 rounded-lg' side='bottom' align='end' sideOffset={4}>
         <DropdownMenuLabel className='p-0 font-normal'>
           <div className='flex items-center gap-2 px-1 py-1.5 text-left text-sm'>

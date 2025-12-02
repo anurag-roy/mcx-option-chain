@@ -181,7 +181,7 @@ function RouteComponent() {
     updateCommodityMutation.mutate({ symbol: editingSymbol, updates });
   };
 
-  const presetValues = [1.5, 2.0, 2.05, 2.5, 3.0];
+  const presetValues = [2.05, 2.55, 2.75, 3.05];
 
   return (
     <div className='container mx-auto px-4 py-8'>
@@ -212,7 +212,7 @@ function RouteComponent() {
               </div>
             ) : (
               <form onSubmit={handleSdSubmit} className='space-y-4'>
-                <div className='space-y-2'>
+                <div className='flex flex-col gap-2'>
                   <label htmlFor='sd-multiplier' className='text-sm font-medium'>
                     Standard Deviation Multiplier
                   </label>
@@ -288,7 +288,7 @@ function RouteComponent() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className='w-[140px]'>Symbol</TableHead>
+                      <TableHead className='w-[140px] pl-4'>Symbol</TableHead>
                       <TableHead className='w-[120px]'>VIX</TableHead>
                       <TableHead className='w-[120px]'>Bid Balance</TableHead>
                       <TableHead className='w-[120px]'>Multiplier</TableHead>
@@ -301,7 +301,7 @@ function RouteComponent() {
 
                       return (
                         <TableRow key={commodity.symbol} className={isEditing ? 'bg-muted/50' : ''}>
-                          <TableCell className='font-medium'>{commodity.symbol}</TableCell>
+                          <TableCell className='pl-4 font-medium'>{commodity.symbol}</TableCell>
                           <TableCell>
                             {isEditing && commodity.vixUpdatable ? (
                               <Input

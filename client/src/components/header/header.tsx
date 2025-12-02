@@ -1,8 +1,21 @@
 import { api } from '@client/lib/api';
+import { cn } from '@client/lib/utils';
 import { PAGE_CONFIGS } from '@client/types/option-chain';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation } from '@tanstack/react-router';
 import { UserButton } from './user-button';
+
+function formatMargin(value: number): string {
+  const absValue = Math.abs(value);
+  if (absValue >= 10_00_000) {
+    // 10 lakh or more - show in lakhs
+    return `${(value / 1_00_000).toFixed(2)}L`;
+  } else if (absValue >= 1000) {
+    // 1000 or more - show in thousands
+    return `${(value / 1000).toFixed(1)}K`;
+  }
+  return value.toFixed(0);
+}
 
 interface HeaderProps {
   isConnected: boolean;
@@ -17,7 +30,15 @@ export function Header({ isConnected }: HeaderProps) {
       const res = await api.settings['sd-multiplier'].$get();
       return res.json();
     },
-    refetchInterval: 5000, // Refresh every 5 seconds to stay in sync
+  });
+
+  const { data: marginData } = useQuery({
+    queryKey: ['userMargin'],
+    queryFn: async () => {
+      const res = await api.user.margin.$get();
+      return res.json();
+    },
+    refetchInterval: 5000,
   });
 
   return (
@@ -64,19 +85,22 @@ export function Header({ isConnected }: HeaderProps) {
             </Link>
           )}
 
-          {/* Connection Status */}
-          <div className='flex items-center gap-2'>
-            <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-            <span
-              className={`text-sm font-medium ${
-                isConnected ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'
-              }`}
+          {/* User Margin Pill */}
+          {marginData?.net !== undefined && (
+            <div
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium',
+                marginData.net >= 0
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
+                  : 'bg-red-500/15 text-red-700 dark:bg-red-500/20 dark:text-red-400'
+              )}
             >
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
+              <span className='opacity-70'>Avl. Margin</span>
+              <span>₹{formatMargin(marginData.net)}</span>
+            </div>
+          )}
 
-          <UserButton />
+          <UserButton isConnected={isConnected} />
         </div>
       </header>
     </div>
