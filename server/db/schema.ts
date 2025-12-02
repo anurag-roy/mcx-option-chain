@@ -1,6 +1,15 @@
 import { index, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { Exchange } from 'kiteconnect-ts';
 
+/**
+ * Simple key-value store for application settings.
+ * Designed to be extensible for future settings like volatility overrides.
+ */
+export const settingsTable = sqliteTable('settings', {
+  key: text().primaryKey(),
+  value: text().notNull(),
+});
+
 export const instrumentsTable = sqliteTable(
   'instruments',
   {

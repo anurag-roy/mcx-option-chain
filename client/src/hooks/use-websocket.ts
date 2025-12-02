@@ -36,7 +36,9 @@ export function useWebSocket(subscribedSymbols?: string[]) {
         if (pendingSubscriptionsRef.current.length > 0) {
           ws.send(JSON.stringify({ type: 'subscribe', symbols: pendingSubscriptionsRef.current }));
           console.log('Subscribed to pending symbols:', pendingSubscriptionsRef.current);
-          subscribedSymbolsRef.current = [...new Set([...subscribedSymbolsRef.current, ...pendingSubscriptionsRef.current])];
+          subscribedSymbolsRef.current = [
+            ...new Set([...subscribedSymbolsRef.current, ...pendingSubscriptionsRef.current]),
+          ];
           pendingSubscriptionsRef.current = [];
         }
       });
@@ -113,9 +115,14 @@ export function useWebSocket(subscribedSymbols?: string[]) {
   // Update subscribed symbols when they change
   useEffect(() => {
     subscribedSymbolsRef.current = subscribedSymbols ?? [];
-    
+
     // If already connected, send new subscription
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && subscribedSymbols && subscribedSymbols.length > 0) {
+    if (
+      wsRef.current &&
+      wsRef.current.readyState === WebSocket.OPEN &&
+      subscribedSymbols &&
+      subscribedSymbols.length > 0
+    ) {
       wsRef.current.send(JSON.stringify({ type: 'subscribe', symbols: subscribedSymbols }));
       console.log('Updated subscription to symbols:', subscribedSymbols);
     }
@@ -141,6 +148,16 @@ export function useWebSocket(subscribedSymbols?: string[]) {
     }
   }, []);
 
+  const updateSdMultiplier = useCallback((value: number) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'updateSdMultiplier', value }));
+      console.log('Sent SD multiplier update:', value);
+    } else {
+      console.warn('Cannot update SD multiplier: WebSocket not connected');
+      toast.error('WebSocket not connected. Please try again.');
+    }
+  }, []);
+
   return {
     optionChainData,
     isConnected,
@@ -148,5 +165,6 @@ export function useWebSocket(subscribedSymbols?: string[]) {
     disconnect,
     subscribe,
     unsubscribe,
+    updateSdMultiplier,
   };
 }

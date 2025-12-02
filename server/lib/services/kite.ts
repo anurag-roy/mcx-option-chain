@@ -6,7 +6,7 @@ import PQueue from 'p-queue';
 
 const queue = new PQueue({
   interval: 1000,
-  intervalCap: 10,
+  intervalCap: 5,
   carryoverIntervalCount: true,
 });
 

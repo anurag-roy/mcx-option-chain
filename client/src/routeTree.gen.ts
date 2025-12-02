@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SilverRouteImport } from './routes/silver'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as GoldRouteImport } from './routes/gold'
 import { Route as EnergyRouteImport } from './routes/energy'
 import { Route as IndexRouteImport } from './routes/index'
@@ -17,6 +18,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const SilverRoute = SilverRouteImport.update({
   id: '/silver',
   path: '/silver',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GoldRoute = GoldRouteImport.update({
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/energy': typeof EnergyRoute
   '/gold': typeof GoldRoute
+  '/settings': typeof SettingsRoute
   '/silver': typeof SilverRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/energy': typeof EnergyRoute
   '/gold': typeof GoldRoute
+  '/settings': typeof SettingsRoute
   '/silver': typeof SilverRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,22 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/energy': typeof EnergyRoute
   '/gold': typeof GoldRoute
+  '/settings': typeof SettingsRoute
   '/silver': typeof SilverRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/energy' | '/gold' | '/silver'
+  fullPaths: '/' | '/energy' | '/gold' | '/settings' | '/silver'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/energy' | '/gold' | '/silver'
-  id: '__root__' | '/' | '/energy' | '/gold' | '/silver'
+  to: '/' | '/energy' | '/gold' | '/settings' | '/silver'
+  id: '__root__' | '/' | '/energy' | '/gold' | '/settings' | '/silver'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   EnergyRoute: typeof EnergyRoute
   GoldRoute: typeof GoldRoute
+  SettingsRoute: typeof SettingsRoute
   SilverRoute: typeof SilverRoute
 }
 
@@ -76,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/silver'
       fullPath: '/silver'
       preLoaderRoute: typeof SilverRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gold': {
@@ -106,6 +123,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   EnergyRoute: EnergyRoute,
   GoldRoute: GoldRoute,
+  SettingsRoute: SettingsRoute,
   SilverRoute: SilverRoute,
 }
 export const routeTree = rootRouteImport

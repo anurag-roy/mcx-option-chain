@@ -414,10 +414,23 @@ export class TickerService {
   /**
    * Subscribe to all symbols in the filter (or all symbols if no filter set).
    * Used by workers to subscribe to their assigned symbols.
+   *
+   * When called with a new sdMultiplier, this will:
+   * 1. Calculate new bounds based on the new multiplier
+   * 2. Unsubscribe from tokens that are no longer in range
+   * 3. Subscribe to new tokens that are now in range
    */
   public async subscribeAll(sdMultiplier: number) {
     const symbols = this.symbolsFilter ?? (Object.keys(CONFIG) as Symbol[]);
-    logger.info(`Subscribing to ${symbols.length} symbols: ${symbols.join(', ')}`);
+    logger.info(`Subscribing to ${symbols.length} symbols with sdMultiplier: ${sdMultiplier}`);
+
+    // Store old subscribed tokens to determine what to unsubscribe
+    const oldTokens = new Set(this.subscribedTokens);
+
+    // Clear current option chain and subscribed tokens
+    // We'll rebuild them with the new SD multiplier
+    this.optionChain = {};
+    this.subscribedTokens.clear();
 
     for (const symbol of symbols) {
       try {
@@ -427,7 +440,22 @@ export class TickerService {
       }
     }
 
-    logger.info(`Subscribed to ${this.subscribedTokens.size} tokens`);
+    // Determine which tokens to unsubscribe (tokens that were in old but not in new)
+    const tokensToUnsubscribe = Array.from(oldTokens).filter((token) => !this.subscribedTokens.has(token));
+
+    if (tokensToUnsubscribe.length > 0) {
+      logger.info(`Unsubscribing from ${tokensToUnsubscribe.length} tokens that are out of new range`);
+      this.unsubscribeFromTokens(tokensToUnsubscribe);
+    }
+
+    // Determine which tokens to subscribe (tokens that are in new but not in old)
+    const tokensToSubscribe = Array.from(this.subscribedTokens).filter((token) => !oldTokens.has(token));
+
+    if (tokensToSubscribe.length > 0) {
+      logger.info(`Subscribing to ${tokensToSubscribe.length} new tokens in range`);
+    }
+
+    logger.info(`Total subscribed tokens: ${this.subscribedTokens.size} (was ${oldTokens.size})`);
   }
 
   /**

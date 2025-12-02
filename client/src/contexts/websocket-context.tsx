@@ -9,6 +9,7 @@ interface WebSocketContextType {
   disconnect: () => void;
   subscribe: (symbols: string[]) => void;
   unsubscribe: (symbols: string[]) => void;
+  updateSdMultiplier: (value: number) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);

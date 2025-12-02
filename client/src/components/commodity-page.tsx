@@ -1,8 +1,5 @@
 import { SymbolTable } from '@client/components/symbol-table';
-import { Button } from '@client/components/ui/button';
 import { useWebSocketContext } from '@client/contexts/websocket-context';
-import { Link } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 
 interface TableConfig {
@@ -39,23 +36,7 @@ export function CommodityPage({ title, tables }: CommodityPageProps) {
   }, [symbols, subscribe, title]);
 
   return (
-    <div className='flex h-[calc(100vh-6rem)] flex-col'>
-      {/* Header */}
-      <div className='mb-4 flex items-center justify-between'>
-        <div className='flex items-center gap-4'>
-          <Link to='/'>
-            <Button variant='ghost' size='icon' className='h-8 w-8'>
-              <ArrowLeft className='h-4 w-4' />
-            </Button>
-          </Link>
-          <h1 className='text-2xl font-bold'>{title}</h1>
-        </div>
-        <div className='flex items-center gap-2'>
-          <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-          <span className='text-muted-foreground text-sm'>{isConnected ? 'Connected' : 'Disconnected'}</span>
-        </div>
-      </div>
-
+    <div className='flex flex-col px-4'>
       {/* Content */}
       {!hasData ? (
         <div className='flex flex-1 items-center justify-center rounded-lg border border-dashed'>

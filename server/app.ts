@@ -2,6 +2,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { logger } from '@server/lib/logger';
 import { httpLogger } from '@server/middlewares/http-logger';
+import { settingsRoute } from '@server/routes/settings';
 import { userRoute } from '@server/routes/user';
 import type { Symbol } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
@@ -9,6 +10,9 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { WSContext } from 'hono/ws';
 import { randomUUID } from 'node:crypto';
+
+// Will be set by index.ts after initialization
+let updateSdMultiplierFn: ((value: number) => boolean) | null = null;
 
 const app = new Hono();
 
@@ -24,6 +28,14 @@ interface ClientSubscription {
 
 const connectedClients = new Map<string, ClientSubscription>();
 let latestOptionChain: Record<number, OptionChain> = {};
+
+/**
+ * Set the callback function for updating SD multiplier.
+ * This is called by the coordinator after initialization.
+ */
+export function setUpdateSdMultiplierCallback(callback: (value: number) => boolean) {
+  updateSdMultiplierFn = callback;
+}
 
 /**
  * Set the aggregated option chain data from coordinator.
@@ -58,6 +70,7 @@ export function setOptionChainData(data: Record<number, OptionChain>) {
 const apiRoutes = app
   .basePath('/api')
   .route('/user', userRoute)
+  .route('/settings', settingsRoute)
   .get(
     '/ws',
     upgradeWebSocket(() => {
@@ -95,7 +108,9 @@ const apiRoutes = app
 
                 if (Object.keys(filteredData).length > 0) {
                   ws.send(JSON.stringify({ type: 'optionChain', data: filteredData }));
-                  logger.info(`Sent initial data to client ${clientId}: ${Object.keys(filteredData).length} instruments`);
+                  logger.info(
+                    `Sent initial data to client ${clientId}: ${Object.keys(filteredData).length} instruments`
+                  );
                 }
               }
             } else if (message.type === 'unsubscribe' && Array.isArray(message.symbols)) {
@@ -105,6 +120,27 @@ const apiRoutes = app
                   subscription.symbols.delete(symbol as Symbol);
                 }
                 logger.info(`Client ${clientId} unsubscribed from: ${message.symbols.join(', ')}`);
+              }
+            } else if (message.type === 'updateSdMultiplier' && typeof message.value === 'number') {
+              logger.info(`Client ${clientId} requested SD multiplier update to: ${message.value}`);
+              if (updateSdMultiplierFn) {
+                const success = updateSdMultiplierFn(message.value);
+                ws.send(
+                  JSON.stringify({
+                    type: 'sdMultiplierUpdated',
+                    success,
+                    value: message.value,
+                  })
+                );
+              } else {
+                logger.error('updateSdMultiplier function not initialized');
+                ws.send(
+                  JSON.stringify({
+                    type: 'sdMultiplierUpdated',
+                    success: false,
+                    error: 'Function not initialized',
+                  })
+                );
               }
             }
           } catch (error) {

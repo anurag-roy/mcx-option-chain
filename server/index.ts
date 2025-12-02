@@ -7,10 +7,11 @@
  */
 
 import { serve } from '@hono/node-server';
-import app, { injectWebSocket, setOptionChainData } from '@server/app';
+import app, { injectWebSocket, setOptionChainData, setUpdateSdMultiplierCallback } from '@server/app';
 import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
 import { kiteService } from '@server/lib/services/kite';
+import { settingsService } from '@server/lib/services/settings';
 import { WORKER_GROUPS } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
 import { fork, type ChildProcess } from 'node:child_process';
@@ -28,10 +29,17 @@ const aggregatedOptionChain: Record<number, OptionChain> = {};
 const workers: ChildProcess[] = [];
 const workerReadyPromises: Promise<void>[] = [];
 
-// SD multiplier for subscriptions (can be made configurable)
-const SD_MULTIPLIER = 2.05;
+// SD multiplier for subscriptions (now dynamically configurable)
+let currentSdMultiplier = 2.05;
 
 async function main() {
+  // Initialize settings with defaults if they don't exist
+  await settingsService.initializeDefaults();
+
+  // Load SD multiplier from database
+  currentSdMultiplier = await settingsService.getSdMultiplier();
+  logger.info(`Loaded SD multiplier from database: ${currentSdMultiplier}`);
+
   // Verify Kite session before starting workers
   try {
     await kiteService.getProfile();
@@ -120,14 +128,17 @@ async function main() {
   );
   injectWebSocket(server);
 
+  // Set the callback for updating SD multiplier from WebSocket messages
+  setUpdateSdMultiplierCallback(updateSdMultiplier);
+
   // Wait for futures LTP data to be received before subscribing
   logger.info('Waiting 5 seconds for futures LTP data...');
   await new Promise((resolve) => setTimeout(resolve, 5000));
 
   // Send subscribe command to all workers
-  logger.info(`Sending subscribe command to workers with sdMultiplier: ${SD_MULTIPLIER}`);
+  logger.info(`Sending subscribe command to workers with sdMultiplier: ${currentSdMultiplier}`);
   for (const worker of workers) {
-    worker.send({ type: 'subscribe', sdMultiplier: SD_MULTIPLIER } satisfies CoordinatorMessage);
+    worker.send({ type: 'subscribe', sdMultiplier: currentSdMultiplier } satisfies CoordinatorMessage);
   }
 
   // Update the app with aggregated option chain data periodically
@@ -136,6 +147,33 @@ async function main() {
       setOptionChainData(aggregatedOptionChain);
     }
   }, 250);
+}
+
+/**
+ * Update the SD multiplier dynamically and notify all workers.
+ * This triggers resubscription with new bounds in all workers.
+ * Also persists the new value to the database.
+ */
+export function updateSdMultiplier(newMultiplier: number) {
+  if (newMultiplier <= 0) {
+    logger.error(`Invalid SD multiplier: ${newMultiplier}. Must be positive.`);
+    return false;
+  }
+
+  logger.info(`Updating SD multiplier from ${currentSdMultiplier} to ${newMultiplier}`);
+  currentSdMultiplier = newMultiplier;
+
+  // Persist to database (fire and forget, errors are logged by the service)
+  settingsService.setSdMultiplier(newMultiplier).catch((error) => {
+    logger.error('Failed to persist SD multiplier to database:', error);
+  });
+
+  // Send updated subscribe command to all workers
+  for (const worker of workers) {
+    worker.send({ type: 'subscribe', sdMultiplier: newMultiplier } satisfies CoordinatorMessage);
+  }
+
+  return true;
 }
 
 // Handle graceful shutdown

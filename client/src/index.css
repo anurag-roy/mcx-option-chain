@@ -121,7 +121,3 @@
     @apply grid min-h-screen grid-rows-[auto_1fr];
   }
 }
-
-html {
-  scrollbar-gutter: stable both-edges;
-}

@@ -1,3 +1,5 @@
+import { PAGE_CONFIGS } from '@client/types/option-chain';
+import { Link, useLocation } from '@tanstack/react-router';
 import { UserButton } from './user-button';
 
 interface HeaderProps {
@@ -5,12 +7,38 @@ interface HeaderProps {
 }
 
 export function Header({ isConnected }: HeaderProps) {
+  const location = useLocation();
+
   return (
-    <div className='border-border border-b py-4'>
-      <header className='mx-auto flex max-w-6xl items-center justify-between px-4'>
-        <div className='flex items-center gap-4'>
-          <img src='/logo.png' alt='MCX logo' className='size-8' />
-          <h1 className='text-2xl font-bold'>MCX Option Chain</h1>
+    <div className='border-border bg-background sticky top-0 z-10 border-b py-4'>
+      <header className='container mx-auto flex items-center justify-between px-4'>
+        <div className='flex items-center gap-6'>
+          {/* Logo - Home Link */}
+          <Link to='/' className='flex items-center gap-3 transition-opacity hover:opacity-80'>
+            <img src='/logo.png' alt='MCX logo' className='size-8' />
+            <h1 className='text-xl font-bold'>MCX Option Chain</h1>
+          </Link>
+
+          {/* Navigation Links */}
+          <nav className='flex items-center gap-1'>
+            {PAGE_CONFIGS.map((config) => {
+              const isActive = location.pathname === config.path;
+              return (
+                <Link
+                  key={config.id}
+                  to={config.path}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  <span className='mr-1.5'>{config.icon}</span>
+                  {config.name}
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
         <div className='flex items-center gap-4'>

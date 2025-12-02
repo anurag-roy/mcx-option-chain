@@ -8,6 +8,13 @@
       "when": 1764045317760,
       "tag": "0000_early_nocturne",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1764664611410,
+      "tag": "0001_giant_vulcan",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,4 @@
 import { Card, CardDescription, CardHeader, CardTitle } from '@client/components/ui/card';
-import { useWebSocketContext } from '@client/contexts/websocket-context';
 import { PAGE_CONFIGS } from '@client/types/option-chain';
 import { Link, createFileRoute } from '@tanstack/react-router';
 
@@ -26,22 +25,9 @@ const badgeColors = [
 ];
 
 function RouteComponent() {
-  const { isConnected } = useWebSocketContext();
-
   return (
-    <div className='flex min-h-[calc(100vh-8rem)] flex-col'>
-      <div className='mb-8 flex items-center justify-between'>
-        <div>
-          <h1 className='text-3xl font-bold tracking-tight'>MCX Option Chain</h1>
-          <p className='text-muted-foreground mt-1'>Select a commodity group to view options</p>
-        </div>
-        <div className='flex items-center gap-2'>
-          <div className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-          <span className='text-muted-foreground text-sm font-medium'>
-            {isConnected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-      </div>
+    <div className='container mx-auto flex min-h-[calc(100vh-8rem)] flex-col px-4'>
+      <h1 className='mb-8 text-2xl font-semibold'>Select a commodity group to view options</h1>
 
       <div className='grid flex-1 grid-cols-1 gap-6 md:grid-cols-3'>
         {PAGE_CONFIGS.map((config, index) => (

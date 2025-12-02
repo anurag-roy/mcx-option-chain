@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@client/components/ui/t
 import { useTheme } from '@client/hooks/use-theme';
 import { api } from '@client/lib/api';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import {
   AlertCircleIcon,
   Loader2Icon,
@@ -120,9 +121,11 @@ export function UserButton() {
             </DropdownMenuSubContent>
           </DropdownMenuPortal>
         </DropdownMenuSub>
-        <DropdownMenuItem className='gap-2'>
-          <SettingsIcon className='text-muted-foreground h-4 w-4' />
-          Settings
+        <DropdownMenuItem asChild className='gap-2'>
+          <Link to='/settings'>
+            <SettingsIcon className='text-muted-foreground h-4 w-4' />
+            Settings
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem className='gap-2'>
           <LogOutIcon className='text-muted-foreground h-4 w-4' />
