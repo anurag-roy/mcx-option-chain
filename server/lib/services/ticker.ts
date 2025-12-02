@@ -5,6 +5,7 @@ import { logger } from '@server/lib/logger';
 import { workingDaysCache } from '@server/lib/market-minutes-cache';
 import { accessToken } from '@server/lib/services/accessToken';
 import { getOrderMargins } from '@server/lib/services/kite';
+import { settingsService } from '@server/lib/services/settings';
 import { volatilityService } from '@server/lib/services/volatility';
 import { calculateDeltas } from '@server/lib/utils/delta';
 import { CONFIG, type Symbol } from '@server/shared/config';
@@ -25,6 +26,7 @@ interface ClientSubscription {
 export class TickerService {
   private readonly OPTION_CHAIN_UPDATE_INTERVAL = 500;
   private readonly MARGIN_UPDATE_INTERVAL = 5000;
+  private readonly COMMODITY_CONFIG_REFRESH_INTERVAL = 5000; // 5 seconds
 
   private ticker = new KiteTicker({
     api_key: env.KITE_API_KEY,
@@ -44,6 +46,12 @@ export class TickerService {
 
   private optionChain: Record<number, OptionChain> = {};
   private isFetchingMargins = false;
+
+  /**
+   * Cached commodity config values (bidBalance, multiplier) for each symbol.
+   * Refreshed periodically to pick up settings changes.
+   */
+  private commodityConfigCache: Record<string, { bidBalance: number; multiplier: number }> = {};
 
   /**
    * Optional callback for publishing option chain data (used in worker mode)
@@ -191,6 +199,27 @@ export class TickerService {
         logger.error('Error updating order margins:', error);
       });
     }, this.MARGIN_UPDATE_INTERVAL);
+
+    // Initialize and periodically refresh commodity config cache
+    await this.refreshCommodityConfigCache();
+    setInterval(() => {
+      this.refreshCommodityConfigCache().catch((error) => {
+        logger.error('Error refreshing commodity config cache:', error);
+      });
+    }, this.COMMODITY_CONFIG_REFRESH_INTERVAL);
+  }
+
+  /**
+   * Refresh the cached commodity config values from settings service.
+   */
+  private async refreshCommodityConfigCache() {
+    const symbols = this.symbolsFilter ?? (Object.keys(CONFIG) as Symbol[]);
+
+    for (const symbol of symbols) {
+      const bidBalance = await settingsService.getBidBalance(symbol);
+      const multiplier = await settingsService.getMultiplier(symbol);
+      this.commodityConfigCache[symbol] = { bidBalance, multiplier };
+    }
   }
 
   private async updateOrderMargins() {
@@ -243,7 +272,10 @@ export class TickerService {
       // If av exists, dv should also exist
       instrument.dv = volatilityService.values[instrument.name]?.dv!;
 
-      const { bidBalance, multiplier } = CONFIG[instrument.name as keyof typeof CONFIG];
+      // Use cached commodity config values (refreshed from settings service)
+      const commodityConfig =
+        this.commodityConfigCache[instrument.name] ?? CONFIG[instrument.name as keyof typeof CONFIG];
+      const { bidBalance, multiplier } = commodityConfig;
       instrument.underlyingLtp = this.futureLtps[instrument.name]![instrument.futExpiry]!;
       instrument.strikePosition =
         (Math.abs(instrument.strike! - instrument.underlyingLtp) * 100) / instrument.underlyingLtp;

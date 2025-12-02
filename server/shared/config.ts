@@ -12,6 +12,12 @@ export const CONFIG = {
 };
 
 /**
+ * Symbols that have numeric (updatable) VIX values.
+ * Other symbols use Yahoo Finance symbol-based VIX which is fetched dynamically.
+ */
+export const NUMERIC_VIX_SYMBOLS = ['NATURALGAS', 'NATGASMINI', 'COPPER', 'ZINC'] as const;
+
+/**
  * Worker groups for distributing symbols across multiple KiteTicker connections.
  * Each group runs in a separate process to avoid Zerodha's 3000 instrument limit
  * and to distribute tick processing load.

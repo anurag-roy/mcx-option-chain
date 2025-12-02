@@ -1,10 +1,12 @@
 import { Button } from '@client/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@client/components/ui/card';
+import { Input } from '@client/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@client/components/ui/table';
 import { useWebSocketContext } from '@client/contexts/websocket-context';
 import { api } from '@client/lib/api';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { Loader2Icon } from 'lucide-react';
+import { Loader2Icon, PencilIcon, SaveIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -12,10 +14,29 @@ export const Route = createFileRoute('/settings')({
   component: RouteComponent,
 });
 
+interface CommodityConfig {
+  symbol: string;
+  vix: number | string;
+  vixUpdatable: boolean;
+  bidBalance: number;
+  multiplier: number;
+}
+
+interface CommodityEditState {
+  vix?: string;
+  bidBalance: string;
+  multiplier: string;
+}
+
 function RouteComponent() {
+  const queryClient = useQueryClient();
   const { updateSdMultiplier, isConnected } = useWebSocketContext();
   const [sdValue, setSdValue] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Track which commodity row is being edited
+  const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
+  const [editState, setEditState] = useState<CommodityEditState | null>(null);
 
   // Fetch current SD multiplier from server
   const {
@@ -30,6 +51,50 @@ function RouteComponent() {
     },
   });
 
+  // Fetch commodity configs
+  const {
+    data: commoditiesData,
+    isLoading: isLoadingCommodities,
+    isError: isCommoditiesError,
+  } = useQuery({
+    queryKey: ['commodities'],
+    queryFn: async () => {
+      const res = await api.settings.commodities.$get();
+      return res.json();
+    },
+  });
+
+  // Mutation for updating commodity settings
+  const updateCommodityMutation = useMutation({
+    mutationFn: async ({
+      symbol,
+      updates,
+    }: {
+      symbol: string;
+      updates: { vix?: number; bidBalance?: number; multiplier?: number };
+    }) => {
+      const res = await api.settings.commodities[':symbol'].$put({
+        param: { symbol: symbol as 'GOLD' },
+        json: updates,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(`Settings updated for ${editingSymbol}`);
+        queryClient.invalidateQueries({ queryKey: ['commodities'] });
+        setEditingSymbol(null);
+        setEditState(null);
+      } else {
+        toast.error(`Failed to update: ${data.errors?.join(', ')}`);
+      }
+    },
+    onError: (error) => {
+      toast.error('Failed to update commodity settings');
+      console.error(error);
+    },
+  });
+
   // Update local state when data is fetched
   useEffect(() => {
     if (sdMultiplierData?.value !== undefined) {
@@ -37,7 +102,7 @@ function RouteComponent() {
     }
   }, [sdMultiplierData]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSdSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     const value = parseFloat(sdValue);
@@ -59,21 +124,72 @@ function RouteComponent() {
       toast.error('Failed to update SD Multiplier');
       console.error(error);
     } finally {
-      // Reset after a short delay to show feedback
       setTimeout(() => setIsUpdating(false), 1000);
     }
+  };
+
+  const startEditing = (commodity: CommodityConfig) => {
+    setEditingSymbol(commodity.symbol);
+    setEditState({
+      vix: commodity.vixUpdatable ? String(commodity.vix) : undefined,
+      bidBalance: String(commodity.bidBalance),
+      multiplier: String(commodity.multiplier),
+    });
+  };
+
+  const cancelEditing = () => {
+    setEditingSymbol(null);
+    setEditState(null);
+  };
+
+  const saveEditing = () => {
+    if (!editingSymbol || !editState) return;
+
+    const commodity = commoditiesData?.commodities.find((c: CommodityConfig) => c.symbol === editingSymbol);
+    if (!commodity) return;
+
+    const updates: { vix?: number; bidBalance?: number; multiplier?: number } = {};
+
+    // Only include vix if it's updatable and changed
+    if (commodity.vixUpdatable && editState.vix !== undefined) {
+      const newVix = parseFloat(editState.vix);
+      if (!isNaN(newVix) && newVix > 0 && newVix !== commodity.vix) {
+        updates.vix = newVix;
+      }
+    }
+
+    // Check bidBalance
+    const newBidBalance = parseFloat(editState.bidBalance);
+    if (!isNaN(newBidBalance) && newBidBalance >= 0 && newBidBalance !== commodity.bidBalance) {
+      updates.bidBalance = newBidBalance;
+    }
+
+    // Check multiplier
+    const newMultiplier = parseFloat(editState.multiplier);
+    if (!isNaN(newMultiplier) && newMultiplier > 0 && newMultiplier !== commodity.multiplier) {
+      updates.multiplier = newMultiplier;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      toast.info('No changes to save');
+      cancelEditing();
+      return;
+    }
+
+    updateCommodityMutation.mutate({ symbol: editingSymbol, updates });
   };
 
   const presetValues = [1.5, 2.0, 2.05, 2.5, 3.0];
 
   return (
     <div className='container mx-auto px-4 py-8'>
-      <div className='mx-auto max-w-2xl space-y-6'>
+      <div className='mx-auto max-w-4xl space-y-6'>
         <div>
           <h1 className='text-3xl font-bold'>Settings</h1>
           <p className='text-muted-foreground mt-2'>Configure your option chain filtering parameters</p>
         </div>
 
+        {/* SD Multiplier Card */}
         <Card>
           <CardHeader>
             <CardTitle>SD Multiplier</CardTitle>
@@ -93,13 +209,13 @@ function RouteComponent() {
                 <p className='text-sm text-red-800 dark:text-red-200'>Failed to load current SD multiplier value.</p>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className='space-y-4'>
+              <form onSubmit={handleSdSubmit} className='space-y-4'>
                 <div className='space-y-2'>
                   <label htmlFor='sd-multiplier' className='text-sm font-medium'>
                     Standard Deviation Multiplier
                   </label>
                   <div className='flex gap-2'>
-                    <input
+                    <Input
                       id='sd-multiplier'
                       type='number'
                       step='0.01'
@@ -108,7 +224,6 @@ function RouteComponent() {
                       value={sdValue}
                       onChange={(e) => setSdValue(e.target.value)}
                       disabled={!isConnected || isUpdating}
-                      className='border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50'
                       placeholder='Enter SD multiplier (e.g., 2.05)'
                     />
                     <Button type='submit' disabled={!isConnected || isUpdating}>
@@ -118,7 +233,7 @@ function RouteComponent() {
                   <p className='text-muted-foreground text-xs'>Current range: 0.5 - 5.0 (Recommended: 1.5 - 3.0)</p>
                 </div>
 
-                <div className='space-y-2'>
+                <div className='flex flex-col gap-2'>
                   <label className='text-sm font-medium'>Quick Presets</label>
                   <div className='flex flex-wrap gap-2'>
                     {presetValues.map((preset) => (
@@ -145,28 +260,146 @@ function RouteComponent() {
                 </p>
               </div>
             )}
-
-            <div className='rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950'>
-              <h4 className='mb-2 text-sm font-medium text-blue-900 dark:text-blue-100'>How SD Multiplier Works</h4>
-              <ul className='list-inside list-disc space-y-1 text-sm text-blue-800 dark:text-blue-200'>
-                <li>Lower values (1.5-2.0): Show fewer, near-the-money options</li>
-                <li>Default value (2.05): Balanced selection of options</li>
-                <li>Higher values (2.5-3.0): Show more out-of-the-money options</li>
-                <li>Changes apply immediately and trigger resubscription</li>
-              </ul>
-            </div>
           </CardContent>
         </Card>
 
+        {/* Commodity Settings Card */}
         <Card>
           <CardHeader>
-            <CardTitle>Connection Status</CardTitle>
-            <CardDescription>WebSocket connection information</CardDescription>
+            <CardTitle>Commodity Settings</CardTitle>
+            <CardDescription>
+              Configure VIX (volatility), bid balance, and multiplier for each commodity. Click a row to edit.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className='flex items-center gap-2'>
-              <div className={`h-3 w-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className='text-sm font-medium'>{isConnected ? 'Connected' : 'Disconnected'}</span>
+            {isLoadingCommodities ? (
+              <div className='flex items-center justify-center py-8'>
+                <Loader2Icon className='text-muted-foreground h-6 w-6 animate-spin' />
+                <span className='text-muted-foreground ml-2 text-sm'>Loading commodity settings...</span>
+              </div>
+            ) : isCommoditiesError ? (
+              <div className='rounded-md border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950'>
+                <p className='text-sm text-red-800 dark:text-red-200'>Failed to load commodity settings.</p>
+              </div>
+            ) : (
+              <div className='rounded-md border'>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className='w-[140px]'>Symbol</TableHead>
+                      <TableHead className='w-[120px]'>VIX</TableHead>
+                      <TableHead className='w-[120px]'>Bid Balance</TableHead>
+                      <TableHead className='w-[120px]'>Multiplier</TableHead>
+                      <TableHead className='w-[100px]'>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {commoditiesData?.commodities.map((commodity: CommodityConfig) => {
+                      const isEditing = editingSymbol === commodity.symbol;
+
+                      return (
+                        <TableRow key={commodity.symbol} className={isEditing ? 'bg-muted/50' : ''}>
+                          <TableCell className='font-medium'>{commodity.symbol}</TableCell>
+                          <TableCell>
+                            {isEditing && commodity.vixUpdatable ? (
+                              <Input
+                                type='number'
+                                step='0.1'
+                                min='1'
+                                value={editState?.vix ?? ''}
+                                onChange={(e) => setEditState((prev) => prev && { ...prev, vix: e.target.value })}
+                                className='w-24'
+                              />
+                            ) : (
+                              <span className={commodity.vixUpdatable ? '' : 'text-muted-foreground'}>
+                                {commodity.vix}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <Input
+                                type='number'
+                                step='0.01'
+                                min='0'
+                                value={editState?.bidBalance ?? ''}
+                                onChange={(e) =>
+                                  setEditState((prev) => prev && { ...prev, bidBalance: e.target.value })
+                                }
+                                className='w-24'
+                              />
+                            ) : (
+                              commodity.bidBalance
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <Input
+                                type='number'
+                                step='1'
+                                min='1'
+                                value={editState?.multiplier ?? ''}
+                                onChange={(e) =>
+                                  setEditState((prev) => prev && { ...prev, multiplier: e.target.value })
+                                }
+                                className='w-24'
+                              />
+                            ) : (
+                              commodity.multiplier
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isEditing ? (
+                              <div className='flex gap-1'>
+                                <Button
+                                  variant='default'
+                                  onClick={saveEditing}
+                                  disabled={updateCommodityMutation.isPending}
+                                >
+                                  {updateCommodityMutation.isPending ? (
+                                    <Loader2Icon className='animate-spin' />
+                                  ) : (
+                                    <SaveIcon />
+                                  )}
+                                </Button>
+                                <Button
+                                  variant='outline'
+                                  onClick={cancelEditing}
+                                  disabled={updateCommodityMutation.isPending}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button variant='outline' onClick={() => startEditing(commodity)}>
+                                <PencilIcon />
+                                Edit
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <div className='mt-4 rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950'>
+              <h4 className='mb-2 text-sm font-medium text-blue-900 dark:text-blue-100'>About Commodity Settings</h4>
+              <ul className='list-inside list-disc space-y-1 text-sm text-blue-800 dark:text-blue-200'>
+                <li>
+                  <strong>VIX:</strong> Volatility index. Symbols like ^GVZ, ^VXSLV fetch real-time data from Yahoo
+                  Finance and are not editable.
+                </li>
+                <li>
+                  <strong>Bid Balance:</strong> Adjustment factor subtracted from bid price for sell value calculation.
+                </li>
+                <li>
+                  <strong>Multiplier:</strong> Contract multiplier used in sell value calculation.
+                </li>
+                <li>Changes take effect within 5 seconds as settings are cached and refreshed periodically.</li>
+              </ul>
             </div>
           </CardContent>
         </Card>

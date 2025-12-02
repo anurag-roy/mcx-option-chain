@@ -1,7 +1,8 @@
 import { logger } from '@server/lib/logger';
 import { workingDaysCache } from '@server/lib/market-minutes-cache';
+import { settingsService } from '@server/lib/services/settings';
 import { setIntervalNow } from '@server/lib/utils';
-import { CONFIG, type Symbol } from '@server/shared/config';
+import { CONFIG, NUMERIC_VIX_SYMBOLS, type Symbol } from '@server/shared/config';
 import YahooFinance from 'yahoo-finance2';
 
 const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
@@ -29,13 +30,26 @@ class VolatilityService {
     logger.info(`Initializing volatility service for ${symbols.length} symbols`);
 
     for (const symbol of symbols) {
-      const { vix } = CONFIG[symbol];
-      const getAv = typeof vix === 'number' ? () => vix : () => getPrice(vix);
+      const isNumericVix = NUMERIC_VIX_SYMBOLS.includes(symbol as (typeof NUMERIC_VIX_SYMBOLS)[number]);
+
+      // Create the getAv function based on whether VIX is numeric or a Yahoo Finance symbol
+      const getAv = isNumericVix
+        ? // For numeric VIX: read from settings service (allows dynamic updates)
+          async () => {
+            const vix = await settingsService.getVix(symbol);
+            return vix as number;
+          }
+        : // For symbol-based VIX: fetch from Yahoo Finance
+          () => getPrice(CONFIG[symbol].vix as string);
 
       setIntervalNow(async () => {
-        const av = await getAv();
-        const dv = workingDaysCache.getDvFromAv(av);
-        this.values[symbol] = { av, dv };
+        try {
+          const av = await getAv();
+          const dv = workingDaysCache.getDvFromAv(av);
+          this.values[symbol] = { av, dv };
+        } catch (error) {
+          logger.error(`Error fetching volatility for ${symbol}:`, error);
+        }
       }, 1000 * 60); // 1 minute
     }
     logger.info('Volatility service initialized');
