@@ -1,4 +1,5 @@
 import type { instrumentsTable } from '@server/db/schema';
+import type { TickFull } from 'kiteconnect-ts';
 
 type Instrument = typeof instrumentsTable.$inferSelect;
 export type OptionChain = Instrument & {
@@ -11,6 +12,7 @@ export type OptionChain = Instrument & {
    */
   underlyingLtp: number;
   bid: number;
+  marketDepth: TickFull['depth'] | null;
   sellValue: number;
   strikePosition: number;
   orderMargin: number;

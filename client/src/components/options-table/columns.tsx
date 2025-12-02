@@ -1,8 +1,17 @@
 import { cn } from '@client/lib/utils';
 import type { OptionChain } from '@client/types/option-chain';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, RowData } from '@tanstack/react-table';
 import { format } from 'date-fns';
+import { PlusCircleIcon } from 'lucide-react';
 import { DataTableColumnHeader } from './column-header';
+
+// Extend TanStack Table meta to include our callback
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface TableMeta<TData extends RowData> {
+    onSelectOption?: (option: OptionChain) => void;
+  }
+}
 
 const green = 'bg-emerald-50/60 text-emerald-800 ring-emerald-100 dark:bg-emerald-900/10 dark:text-emerald-500';
 const red = 'bg-red-50/60 text-red-800 ring-red-100 dark:bg-red-900/10 dark:text-red-500';
@@ -66,10 +75,18 @@ export const columns: ColumnDef<OptionChain>[] = [
     header: ({ table, column }) => (
       <DataTableColumnHeader table={table} column={column} title='RV' tooltip='Return Value' />
     ),
-    cell: ({ row }) => (
-      <div className={cn('p-2 text-right font-semibold tabular-nums', row.original.returnValue > 0 ? green : red)}>
-        {row.original.returnValue ? (row.original.returnValue * 100).toFixed(2) : '-'}
-      </div>
+    cell: ({ row, table }) => (
+      <button
+        type='button'
+        className={cn(
+          'flex w-full cursor-pointer items-center justify-end gap-1 p-2 font-semibold tabular-nums transition-opacity hover:opacity-80',
+          row.original.returnValue > 0 ? green : red
+        )}
+        onClick={() => table.options.meta?.onSelectOption?.(row.original)}
+      >
+        <PlusCircleIcon className='h-4 w-4 shrink-0' />
+        <span>{row.original.returnValue ? (row.original.returnValue * 100).toFixed(2) : '-'}</span>
+      </button>
     ),
     sortingFn: (rowA, rowB) => rowA.original.returnValue - rowB.original.returnValue,
   },

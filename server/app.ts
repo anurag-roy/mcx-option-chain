@@ -2,6 +2,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { logger } from '@server/lib/logger';
 import { httpLogger } from '@server/middlewares/http-logger';
+import { ordersRoute } from '@server/routes/orders';
 import { settingsRoute } from '@server/routes/settings';
 import { userRoute } from '@server/routes/user';
 import type { Symbol } from '@server/shared/config';
@@ -69,6 +70,7 @@ const apiRoutes = app
   .basePath('/api')
   .route('/user', userRoute)
   .route('/settings', settingsRoute)
+  .route('/orders', ordersRoute)
   .get(
     '/ws',
     upgradeWebSocket(() => {

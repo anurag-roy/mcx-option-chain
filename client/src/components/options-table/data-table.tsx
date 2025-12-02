@@ -15,9 +15,10 @@ import { numericCols } from './columns';
 interface DataTableProps {
   columns: ColumnDef<OptionChain>[];
   data: OptionChain[];
+  onSelectOption?: (option: OptionChain) => void;
 }
 
-export const DataTable = memo(function DataTable({ columns, data }: DataTableProps) {
+export const DataTable = memo(function DataTable({ columns, data, onSelectOption }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
   const table = useReactTable({
@@ -28,6 +29,9 @@ export const DataTable = memo(function DataTable({ columns, data }: DataTablePro
     getSortedRowModel: getSortedRowModel(),
     state: {
       sorting,
+    },
+    meta: {
+      onSelectOption,
     },
   });
 

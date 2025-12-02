@@ -155,6 +155,7 @@ export class TickerService {
           }
 
           instrument.bid = tick.depth?.buy[0]?.price ?? 0;
+          instrument.marketDepth = tick.depth;
         }
       }
     });
@@ -426,6 +427,7 @@ export class TickerService {
           futExpiry,
           underlyingLtp: ltp,
           bid: 0,
+          marketDepth: null,
           sellValue: 0,
           strikePosition: 0,
           orderMargin: 0,

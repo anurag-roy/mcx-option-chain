@@ -1,3 +1,20 @@
+/**
+ * Market depth entry structure (from Kite API)
+ */
+export type MarketDepthEntry = {
+  quantity: number;
+  price: number;
+  orders: number;
+};
+
+/**
+ * Market depth structure with buy and sell sides
+ */
+export type MarketDepth = {
+  buy: MarketDepthEntry[];
+  sell: MarketDepthEntry[];
+} | null;
+
 export type OptionChain = {
   instrumentToken: number;
   exchangeToken: string;
@@ -13,6 +30,7 @@ export type OptionChain = {
   futExpiry: string;
   underlyingLtp: number;
   bid: number;
+  marketDepth: MarketDepth;
   sellValue: number;
   strikePosition: number;
   orderMargin: number;
