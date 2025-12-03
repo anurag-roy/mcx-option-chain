@@ -1,6 +1,6 @@
-import { OrderModal } from '@client/components/order-modal';
 import { columns } from '@client/components/options-table/columns';
 import { DataTable } from '@client/components/options-table/data-table';
+import { OrderModal } from '@client/components/order-modal';
 import { Card, CardContent, CardHeader, CardTitle } from '@client/components/ui/card';
 import type { OptionChain, OptionChainData } from '@client/types/option-chain';
 import { useCallback, useMemo, useState } from 'react';
@@ -17,7 +17,7 @@ export function OptionsCard({ name, symbols, optionChainData }: OptionsCardProps
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Derive the live option from current data (updates when optionChainData updates)
-  const selectedOption = selectedToken !== null ? optionChainData[selectedToken] ?? null : null;
+  const selectedOption = selectedToken !== null ? (optionChainData[selectedToken] ?? null) : null;
 
   const filteredData = useMemo(() => {
     const allOptions = Object.values(optionChainData);

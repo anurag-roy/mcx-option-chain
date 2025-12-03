@@ -1,4 +1,5 @@
 import { Button } from '@client/components/ui/button';
+import { Checkbox } from '@client/components/ui/checkbox';
 import {
   Dialog,
   DialogClose,
@@ -8,11 +9,13 @@ import {
   DialogTitle,
 } from '@client/components/ui/dialog';
 import { Input } from '@client/components/ui/input';
+import { NumberInput } from '@client/components/ui/number-input';
 import { useUserMargin } from '@client/hooks/use-user-margin';
 import { api } from '@client/lib/api';
+import { cn } from '@client/lib/utils';
 import type { OptionChain } from '@client/types/option-chain';
 import { useMutation } from '@tanstack/react-query';
-import { AlertTriangleIcon, InfoIcon, WalletIcon } from 'lucide-react';
+import { AlertTriangleIcon, InfoIcon, PencilIcon, WalletIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { BuyerTable } from './buyer-table';
@@ -33,6 +36,8 @@ function displayInr(value: number): string {
 
 export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
   const [quantity, setQuantity] = useState(1);
+  const [overridePriceEnabled, setOverridePriceEnabled] = useState(false);
+  const [overridePrice, setOverridePrice] = useState<number>(0);
 
   // Fetch user margin
   const { data: marginData } = useUserMargin();
@@ -55,14 +60,23 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
     setQuantity(smartQty);
   }, [option?.instrumentToken, marginData?.net, option?.orderMargin, option?.marketDepth]);
 
+  // Reset override price when option changes
+  useEffect(() => {
+    setOverridePriceEnabled(false);
+    setOverridePrice(option?.bid ?? 0);
+  }, [option?.instrumentToken]);
+
   const placeSellOrderMutation = useMutation({
     mutationFn: async () => {
       if (!option) throw new Error('No option selected');
 
+      // Use override price if enabled, otherwise use buyer 1's bid
+      const limitPrice = overridePriceEnabled ? overridePrice : option.bid;
+
       const res = await api.orders.sell.$post({
         json: {
           tradingsymbol: option.tradingsymbol,
-          price: option.bid,
+          price: limitPrice,
           quantity,
         },
       });
@@ -134,6 +148,54 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
               <p className='text-2xl font-bold'>{displayInr(totalMargin)}</p>
             </div>
 
+            {/* Override Limit Price */}
+            <label
+              className={cn(
+                'col-span-2 flex cursor-pointer items-center gap-3 rounded-md px-4 py-3 ring-1 transition-colors ring-inset',
+                overridePriceEnabled
+                  ? 'bg-blue-50/50 text-blue-800 ring-blue-700/20 dark:bg-blue-500/5 dark:text-blue-200'
+                  : 'bg-zinc-50/50 text-zinc-800 ring-zinc-700/20 dark:bg-zinc-500/5 dark:text-zinc-200'
+              )}
+            >
+              <Checkbox
+                checked={overridePriceEnabled}
+                onCheckedChange={(checked) => {
+                  const isChecked = checked === true;
+                  setOverridePriceEnabled(isChecked);
+                  // Pre-fill with current buyer 1 price when enabling
+                  if (isChecked) {
+                    setOverridePrice(option.bid);
+                  }
+                }}
+              />
+
+              <PencilIcon
+                className={cn(
+                  'h-4 w-4',
+                  overridePriceEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-500 dark:text-zinc-400'
+                )}
+                aria-hidden='true'
+              />
+              <span
+                className={cn(
+                  'text-sm font-semibold',
+                  overridePriceEnabled ? 'text-blue-700 dark:text-blue-400' : 'text-zinc-700 dark:text-zinc-400'
+                )}
+              >
+                Override Limit Price:
+              </span>
+              <NumberInput
+                value={overridePrice}
+                onChange={setOverridePrice}
+                step={0.05}
+                minValue={0.05}
+                formatOptions={{ minimumFractionDigits: 2, maximumFractionDigits: 2 }}
+                isDisabled={!overridePriceEnabled}
+                className='ml-auto w-32'
+                inputClassName={cn(!overridePriceEnabled && 'opacity-50')}
+              />
+            </label>
+
             {/* Margin Status - Shortfall or Remaining */}
             {hasMarginData && (
               <div
@@ -168,22 +230,12 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
         <div className='mx-auto mb-8 grid max-w-sm grid-cols-[repeat(5,auto)] items-center gap-2 px-4'>
           <span className='text-sm font-medium text-zinc-700 dark:text-zinc-300'>Margin</span>
           <span></span>
-          <label htmlFor='quantity' className='block text-sm font-medium text-zinc-700 dark:text-zinc-300'>
-            Quantity
-          </label>
+          <span className='text-sm font-medium text-zinc-700 dark:text-zinc-300'>Quantity</span>
           <span></span>
           <span className='text-sm font-medium text-zinc-700 dark:text-zinc-300'>Total</span>
           <Input value={marginPerQty.toFixed(2)} disabled className='w-28' />
           <span className='text-sm font-medium text-zinc-500'>×</span>
-          <Input
-            type='number'
-            name='quantity'
-            id='quantity'
-            value={quantity}
-            min={1}
-            onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-            className='w-20'
-          />
+          <NumberInput value={quantity} onChange={setQuantity} step={1} minValue={1} className='w-28' />
           <span className='text-sm font-medium text-zinc-500'>=</span>
           <Input value={totalMargin.toFixed(2)} disabled className='w-28' />
         </div>
