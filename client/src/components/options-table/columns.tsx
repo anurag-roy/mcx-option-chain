@@ -149,7 +149,7 @@ export const columns: ColumnDef<OptionChain>[] = [
         );
       }
       return (
-        <div className='bg-indigo-50/60 p-2 text-center text-indigo-800 tabular-nums dark:bg-indigo-900/20 dark:text-indigo-500'>
+        <div className='bg-blue-50/60 p-2 text-center font-medium text-blue-800 tabular-nums dark:bg-blue-900/20 dark:text-blue-500'>
           {sigmaXI.toFixed(3)}%
         </div>
       );

@@ -29,10 +29,10 @@ export function SellerTable({ depth }: Props) {
               return (
                 <TableRow key={i}>
                   <TableCell>Seller {i + 1}</TableCell>
-                  <TableCell className='bg-red-50/60 text-right font-semibold tabular-nums text-red-800 dark:bg-red-900/10 dark:text-red-500'>
+                  <TableCell className='bg-red-50/60 text-right font-semibold text-red-800 tabular-nums dark:bg-red-900/10 dark:text-red-500'>
                     {entry?.price?.toFixed(2) ?? '-'}
                   </TableCell>
-                  <TableCell className='bg-red-50/60 text-right font-semibold tabular-nums text-red-800 dark:bg-red-900/10 dark:text-red-500'>
+                  <TableCell className='bg-red-50/60 text-right font-semibold text-red-800 tabular-nums dark:bg-red-900/10 dark:text-red-500'>
                     {entry?.quantity ?? '-'}
                   </TableCell>
                 </TableRow>
@@ -44,4 +44,3 @@ export function SellerTable({ depth }: Props) {
     </div>
   );
 }
-

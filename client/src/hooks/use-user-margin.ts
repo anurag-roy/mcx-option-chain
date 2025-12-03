@@ -11,4 +11,3 @@ export function useUserMargin() {
     refetchInterval: 5000,
   });
 }
-

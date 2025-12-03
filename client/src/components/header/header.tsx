@@ -58,8 +58,8 @@ export function Header({ isConnected }: HeaderProps) {
                   to={config.path}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary/10 text-primary dark:bg-muted dark:text-foreground'
+                      : 'text-muted-foreground hover:bg-muted'
                   }`}
                 >
                   <span className='mr-1.5'>{config.icon}</span>
@@ -75,9 +75,9 @@ export function Header({ isConnected }: HeaderProps) {
           {sdData?.value !== undefined && (
             <Link
               to='/settings'
-              className='bg-primary/10 text-primary hover:bg-primary/20 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium transition-colors'
+              className='bg-primary/10 text-primary dark:bg-muted/80 dark:text-foreground dark:hover:bg-muted hover:bg-primary/20 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium transition-colors'
             >
-              <span className='text-primary/70'>SD</span>
+              <span className='text-primary/70 dark:text-foreground/70'>SD</span>
               <span>{sdData.value}</span>
             </Link>
           )}

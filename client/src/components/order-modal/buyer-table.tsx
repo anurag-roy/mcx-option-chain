@@ -12,7 +12,7 @@ export function BuyerTable({ depth }: Props) {
     <div className='rounded-md border'>
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className='divide-x'>
             <TableHead className='min-w-[100px]'>Buyer</TableHead>
             <TableHead className='min-w-[8ch] text-right'>Bid</TableHead>
             <TableHead className='min-w-[8ch] text-right'>Qty</TableHead>
@@ -27,12 +27,12 @@ export function BuyerTable({ depth }: Props) {
             indices.map((i) => {
               const entry = depth.buy[i];
               return (
-                <TableRow key={i}>
+                <TableRow key={i} className='divide-x'>
                   <TableCell>Buyer {i + 1}</TableCell>
-                  <TableCell className='bg-blue-50/60 text-right font-semibold tabular-nums text-blue-800 dark:bg-blue-900/10 dark:text-blue-500'>
+                  <TableCell className='bg-blue-50/60 text-right font-semibold text-blue-800 tabular-nums dark:bg-blue-900/10 dark:text-blue-500'>
                     {entry?.price?.toFixed(2) ?? '-'}
                   </TableCell>
-                  <TableCell className='bg-blue-50/60 text-right font-semibold tabular-nums text-blue-800 dark:bg-blue-900/10 dark:text-blue-500'>
+                  <TableCell className='bg-blue-50/60 text-right font-semibold text-blue-800 tabular-nums dark:bg-blue-900/10 dark:text-blue-500'>
                     {entry?.quantity ?? '-'}
                   </TableCell>
                 </TableRow>
@@ -44,4 +44,3 @@ export function BuyerTable({ depth }: Props) {
     </div>
   );
 }
-

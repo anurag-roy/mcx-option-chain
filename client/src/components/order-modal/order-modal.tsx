@@ -131,7 +131,7 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
           <div className='mx-auto grid max-w-sm grid-cols-[auto,auto] gap-6'>
             {/* Net Return Info */}
             <div className='col-span-2 flex items-center gap-1 rounded-md bg-blue-50/50 px-4 py-3 text-blue-800 ring-1 ring-blue-700/20 ring-inset dark:border-blue-500/30 dark:bg-blue-500/5 dark:text-blue-200'>
-              <InfoIcon className='h-4 w-4 fill-blue-600 dark:fill-blue-200/50' aria-hidden='true' />
+              <InfoIcon className='h-4 w-4' aria-hidden='true' />
               <span className='text-sm font-semibold text-blue-700 dark:text-blue-500'>
                 Net Return on this margin is:
               </span>
