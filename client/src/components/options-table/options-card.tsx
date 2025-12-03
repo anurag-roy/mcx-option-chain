@@ -12,8 +12,12 @@ interface OptionsCardProps {
 }
 
 export function OptionsCard({ name, symbols, optionChainData }: OptionsCardProps) {
-  const [selectedOption, setSelectedOption] = useState<OptionChain | null>(null);
+  // Store only the token, not the entire option object
+  const [selectedToken, setSelectedToken] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Derive the live option from current data (updates when optionChainData updates)
+  const selectedOption = selectedToken !== null ? optionChainData[selectedToken] ?? null : null;
 
   const filteredData = useMemo(() => {
     const allOptions = Object.values(optionChainData);
@@ -22,15 +26,15 @@ export function OptionsCard({ name, symbols, optionChainData }: OptionsCardProps
   const length = filteredData.length;
 
   const handleSelectOption = useCallback((option: OptionChain) => {
-    setSelectedOption(option);
+    setSelectedToken(option.instrumentToken);
     setIsModalOpen(true);
   }, []);
 
   const handleModalClose = useCallback((open: boolean) => {
     setIsModalOpen(open);
     if (!open) {
-      // Keep selectedOption around briefly for close animation
-      setTimeout(() => setSelectedOption(null), 200);
+      // Keep selectedToken around briefly for close animation
+      setTimeout(() => setSelectedToken(null), 200);
     }
   }, []);
 
