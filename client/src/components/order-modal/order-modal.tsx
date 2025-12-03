@@ -8,10 +8,11 @@ import {
   DialogTitle,
 } from '@client/components/ui/dialog';
 import { Input } from '@client/components/ui/input';
+import { useUserMargin } from '@client/hooks/use-user-margin';
 import { api } from '@client/lib/api';
 import type { OptionChain } from '@client/types/option-chain';
 import { useMutation } from '@tanstack/react-query';
-import { InfoIcon } from 'lucide-react';
+import { AlertTriangleIcon, InfoIcon, WalletIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { BuyerTable } from './buyer-table';
@@ -33,10 +34,26 @@ function displayInr(value: number): string {
 export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
   const [quantity, setQuantity] = useState(1);
 
-  // Reset quantity when a different option is selected
+  // Fetch user margin
+  const { data: marginData } = useUserMargin();
+
+  // Calculate smart default quantity when option or margin data changes
   useEffect(() => {
-    setQuantity(1);
-  }, [option?.instrumentToken]);
+    if (!option) return;
+
+    const userMargin = marginData?.net ?? 0;
+    const orderMargin = option.orderMargin;
+    const buyer1Qty = option.marketDepth?.buy[0]?.quantity ?? 0;
+
+    // Step 1: Max quantity user can afford
+    const maxAffordableQty = orderMargin > 0 ? Math.floor(userMargin / orderMargin) : 0;
+
+    // Step 2: Limit by buyer 1's quantity (to ensure order executes at buyer 1's price)
+    // Math.max(1, ...) ensures we never go below 1 for proper margin shortfall display
+    const smartQty = Math.max(1, Math.min(maxAffordableQty, buyer1Qty));
+
+    setQuantity(smartQty);
+  }, [option?.instrumentToken, marginData?.net, option?.orderMargin, option?.marketDepth]);
 
   const placeSellOrderMutation = useMutation({
     mutationFn: async () => {
@@ -69,6 +86,12 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
   const marginPerQty = option.orderMargin;
   const totalMargin = marginPerQty * quantity;
   const netReturn = totalMargin > 0 ? (option.returnValue * 100).toFixed(2) : '-';
+
+  // Calculate margin status
+  const userMargin = marginData?.net ?? 0;
+  const hasMarginData = marginData?.net !== undefined;
+  const marginDifference = userMargin - totalMargin;
+  const hasMarginShortfall = hasMarginData && marginDifference < 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -110,6 +133,31 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
               <h4 className='text-sm font-semibold text-zinc-700 dark:text-zinc-500'>Margin Required</h4>
               <p className='text-2xl font-bold'>{displayInr(totalMargin)}</p>
             </div>
+
+            {/* Margin Status - Shortfall or Remaining */}
+            {hasMarginData && (
+              <div
+                className={`col-span-2 flex items-center gap-2 rounded-md px-4 py-3 ring-1 ring-inset ${
+                  hasMarginShortfall
+                    ? 'bg-red-50/50 text-red-800 ring-red-700/20 dark:bg-red-500/5 dark:text-red-200'
+                    : 'bg-emerald-50/50 text-emerald-800 ring-emerald-700/20 dark:bg-emerald-500/5 dark:text-emerald-200'
+                }`}
+              >
+                {hasMarginShortfall ? (
+                  <AlertTriangleIcon className='h-4 w-4 text-red-600 dark:text-red-400' aria-hidden='true' />
+                ) : (
+                  <WalletIcon className='h-4 w-4 text-emerald-600 dark:text-emerald-400' aria-hidden='true' />
+                )}
+                <span
+                  className={`text-sm font-semibold ${
+                    hasMarginShortfall ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
+                  }`}
+                >
+                  {hasMarginShortfall ? 'Margin Shortfall:' : 'Remaining Margin:'}
+                </span>
+                <span className='ml-auto text-xl font-bold'>{displayInr(Math.abs(marginDifference))}</span>
+              </div>
+            )}
           </div>
 
           {/* Seller Table */}
@@ -145,7 +193,7 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
           <Button
             type='button'
             size='lg'
-            disabled={option.strikePosition > 30 || placeSellOrderMutation.isPending}
+            disabled={hasMarginShortfall || placeSellOrderMutation.isPending}
             isLoading={placeSellOrderMutation.isPending}
             loadingText='Placing Order...'
             onClick={() => placeSellOrderMutation.mutate()}

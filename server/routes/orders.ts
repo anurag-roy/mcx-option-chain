@@ -22,7 +22,7 @@ export const ordersRoute = new Hono()
         tradingsymbol,
         transaction_type: 'SELL',
         quantity,
-        product: 'MIS',
+        product: 'NRML',
         order_type: 'LIMIT',
         price,
       });
@@ -43,4 +43,3 @@ export const ordersRoute = new Hono()
       throw new HTTPException(500, { message: 'Failed to place order' });
     }
   });
-

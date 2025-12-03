@@ -1,3 +1,4 @@
+import { useUserMargin } from '@client/hooks/use-user-margin';
 import { api } from '@client/lib/api';
 import { cn } from '@client/lib/utils';
 import { PAGE_CONFIGS } from '@client/types/option-chain';
@@ -7,9 +8,12 @@ import { UserButton } from './user-button';
 
 function formatMargin(value: number): string {
   const absValue = Math.abs(value);
-  if (absValue >= 10_00_000) {
+  if (absValue >= 1_00_00_000) {
+    // 1 crore or more - show in crores
+    return `${(value / 1_00_00_000).toFixed(1)}Cr`;
+  } else if (absValue >= 1_00_000) {
     // 10 lakh or more - show in lakhs
-    return `${(value / 1_00_000).toFixed(2)}L`;
+    return `${(value / 1_00_000).toFixed(1)}L`;
   } else if (absValue >= 1000) {
     // 1000 or more - show in thousands
     return `${(value / 1000).toFixed(1)}K`;
@@ -32,14 +36,7 @@ export function Header({ isConnected }: HeaderProps) {
     },
   });
 
-  const { data: marginData } = useQuery({
-    queryKey: ['userMargin'],
-    queryFn: async () => {
-      const res = await api.user.margin.$get();
-      return res.json();
-    },
-    refetchInterval: 5000,
-  });
+  const { data: marginData } = useUserMargin();
 
   return (
     <div className='border-border bg-background sticky top-0 z-10 border-b py-4'>
