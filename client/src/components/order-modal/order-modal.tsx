@@ -42,7 +42,8 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
   // Fetch user margin
   const { data: marginData } = useUserMargin();
 
-  // Calculate smart default quantity when option or margin data changes
+  // Calculate smart default quantity ONLY when a new option is selected (modal opens)
+  // This runs once per option, then user can freely adjust quantity without it resetting
   useEffect(() => {
     if (!option) return;
 
@@ -58,7 +59,8 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
     const smartQty = Math.max(1, Math.min(maxAffordableQty, buyer1Qty));
 
     setQuantity(smartQty);
-  }, [option?.instrumentToken, marginData?.net, option?.orderMargin, option?.marketDepth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [option?.instrumentToken]);
 
   // Reset override price when option changes
   useEffect(() => {

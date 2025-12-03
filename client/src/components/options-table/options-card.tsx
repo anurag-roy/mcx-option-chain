@@ -40,7 +40,7 @@ export function OptionsCard({ name, symbols, optionChainData }: OptionsCardProps
 
   return (
     <>
-      <Card key={name} className='gap-2 pt-4 pb-0'>
+      <Card key={name} className='h-fit gap-2 pt-4 pb-0'>
         <CardHeader className='px-4'>
           <CardTitle>
             {name} ({length} {length === 1 ? 'instrument' : 'instruments'})

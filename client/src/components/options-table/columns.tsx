@@ -75,19 +75,24 @@ export const columns: ColumnDef<OptionChain>[] = [
     header: ({ table, column }) => (
       <DataTableColumnHeader table={table} column={column} title='RV' tooltip='Return Value' />
     ),
-    cell: ({ row, table }) => (
-      <button
-        type='button'
-        className={cn(
-          'flex w-full cursor-pointer items-center justify-end gap-1 p-2 font-semibold tabular-nums transition-opacity hover:opacity-80',
-          row.original.returnValue > 0 ? green : red
-        )}
-        onClick={() => table.options.meta?.onSelectOption?.(row.original)}
-      >
-        <PlusCircleIcon className='h-4 w-4 shrink-0' />
-        <span>{row.original.returnValue ? (row.original.returnValue * 100).toFixed(2) : '-'}</span>
-      </button>
-    ),
+    cell: ({ row, table }) =>
+      row.original.returnValue ? (
+        <button
+          type='button'
+          className={cn(
+            'flex w-full cursor-pointer items-center justify-between gap-1 p-2 font-semibold tabular-nums transition-opacity hover:opacity-80',
+            row.original.returnValue >= 0 ? green : red
+          )}
+          onClick={() => table.options.meta?.onSelectOption?.(row.original)}
+        >
+          <PlusCircleIcon className='h-4 w-4 shrink-0' />
+          <span className='rounded-full px-2 py-0.25 tabular-nums ring-1 ring-gray-400 dark:ring-gray-600'>
+            {(row.original.returnValue * 100).toFixed(2)}
+          </span>
+        </button>
+      ) : (
+        <div className='p-2 text-right'>-</div>
+      ),
     sortingFn: (rowA, rowB) => rowA.original.returnValue - rowB.original.returnValue,
   },
   {
@@ -102,7 +107,7 @@ export const columns: ColumnDef<OptionChain>[] = [
           row.original.strikePosition > 30 ? 'text-red-800 dark:text-red-500' : 'text-emerald-800 dark:text-emerald-500'
         )}
       >
-        <span className='rounded-full px-2 py-1 tabular-nums ring-1 ring-gray-400 dark:ring-gray-600'>
+        <span className='rounded-full px-2 py-0.5 tabular-nums ring-1 ring-gray-400 dark:ring-gray-600'>
           {row.original.strikePosition.toFixed(2)}
         </span>
       </div>
