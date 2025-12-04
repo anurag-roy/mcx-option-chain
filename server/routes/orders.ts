@@ -3,6 +3,7 @@ import { kiteService } from '@server/lib/services/kite';
 import { routeValidator } from '@server/middlewares/validator';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import type { PlaceOrderParams } from 'kiteconnect-ts';
 import { z } from 'zod';
 
 const placeOrderSchema = z.object({
@@ -17,7 +18,7 @@ export const ordersRoute = new Hono()
     const { tradingsymbol, price, quantity } = c.req.valid('json');
 
     try {
-      const result = await kiteService.placeOrder('regular', {
+      const placeOrderParams: PlaceOrderParams = {
         exchange: 'MCX',
         tradingsymbol,
         transaction_type: 'SELL',
@@ -25,7 +26,9 @@ export const ordersRoute = new Hono()
         product: 'NRML',
         order_type: 'LIMIT',
         price,
-      });
+      };
+      logger.info('Placing order:', placeOrderParams);
+      const result = await kiteService.placeOrder('regular', placeOrderParams);
 
       logger.info(`Order placed successfully: ${result.order_id} for ${tradingsymbol}`);
 
