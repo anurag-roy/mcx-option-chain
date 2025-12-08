@@ -12,7 +12,7 @@ export function SellerTable({ depth }: Props) {
     <div className='rounded-md border'>
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className='divide-x'>
             <TableHead className='min-w-[100px]'>Seller</TableHead>
             <TableHead className='min-w-[8ch] text-right'>Ask</TableHead>
             <TableHead className='min-w-[8ch] text-right'>Qty</TableHead>
@@ -27,7 +27,7 @@ export function SellerTable({ depth }: Props) {
             indices.map((i) => {
               const entry = depth.sell[i];
               return (
-                <TableRow key={i}>
+                <TableRow key={i} className='divide-x'>
                   <TableCell>Seller {i + 1}</TableCell>
                   <TableCell className='bg-red-50/60 text-right font-semibold text-red-800 tabular-nums dark:bg-red-900/10 dark:text-red-500'>
                     {entry?.price?.toFixed(2) ?? '-'}

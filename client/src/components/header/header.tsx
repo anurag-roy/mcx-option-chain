@@ -1,3 +1,4 @@
+import { NotificationCenter } from '@client/components/notification-center';
 import { useUserMargin } from '@client/hooks/use-user-margin';
 import { api } from '@client/lib/api';
 import { cn } from '@client/lib/utils';
@@ -97,6 +98,7 @@ export function Header({ isConnected }: HeaderProps) {
             </div>
           )}
 
+          <NotificationCenter />
           <UserButton isConnected={isConnected} />
         </div>
       </header>

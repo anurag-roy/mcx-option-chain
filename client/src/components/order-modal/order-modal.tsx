@@ -111,7 +111,7 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-5xl'>
+      <DialogContent className='sm:max-w-6xl'>
         <DialogHeader>
           <DialogTitle>
             {option.name} {option.strike}
@@ -191,9 +191,8 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
                 onChange={setOverridePrice}
                 step={0.05}
                 minValue={0.05}
-                formatOptions={{ minimumFractionDigits: 2, maximumFractionDigits: 2 }}
                 isDisabled={!overridePriceEnabled}
-                className='ml-auto w-32'
+                className='ml-auto w-36'
                 inputClassName={cn(!overridePriceEnabled && 'opacity-50')}
               />
             </label>
@@ -201,11 +200,12 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
             {/* Margin Status - Shortfall or Remaining */}
             {hasMarginData && (
               <div
-                className={`col-span-2 flex items-center gap-2 rounded-md px-4 py-3 ring-1 ring-inset ${
+                className={cn(
+                  'col-span-2 flex items-center gap-2 rounded-md px-4 py-3 ring-1 ring-inset',
                   hasMarginShortfall
                     ? 'bg-red-50/50 text-red-800 ring-red-700/20 dark:bg-red-500/5 dark:text-red-200'
                     : 'bg-emerald-50/50 text-emerald-800 ring-emerald-700/20 dark:bg-emerald-500/5 dark:text-emerald-200'
-                }`}
+                )}
               >
                 {hasMarginShortfall ? (
                   <AlertTriangleIcon className='h-4 w-4 text-red-600 dark:text-red-400' aria-hidden='true' />
@@ -213,9 +213,10 @@ export function OrderModal({ option, open, onOpenChange }: OrderModalProps) {
                   <WalletIcon className='h-4 w-4 text-emerald-600 dark:text-emerald-400' aria-hidden='true' />
                 )}
                 <span
-                  className={`text-sm font-semibold ${
+                  className={cn(
+                    'text-sm font-semibold',
                     hasMarginShortfall ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
-                  }`}
+                  )}
                 >
                   {hasMarginShortfall ? 'Margin Shortfall:' : 'Remaining Margin:'}
                 </span>

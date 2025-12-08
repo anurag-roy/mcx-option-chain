@@ -1,5 +1,6 @@
 import { Header } from '@client/components/header/header';
 import { Toaster } from '@client/components/ui/sonner';
+import { NotificationProvider } from '@client/contexts/notification-context';
 import { useWebSocketContext, WebSocketProvider } from '@client/contexts/websocket-context';
 import { useTheme } from '@client/hooks/use-theme';
 import type { QueryClient } from '@tanstack/react-query';
@@ -16,9 +17,11 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 
 function RootComponent() {
   return (
-    <WebSocketProvider>
-      <RootLayout />
-    </WebSocketProvider>
+    <NotificationProvider>
+      <WebSocketProvider>
+        <RootLayout />
+      </WebSocketProvider>
+    </NotificationProvider>
   );
 }
 
