@@ -39,10 +39,10 @@ export const getOrderMargins = async (tradingsymbols: string[]) => {
       const margins = await queue.add(() => kiteService.orderMargins(orders, 'compact'));
 
       const fetchedMargins = margins.filter((margin) => margin.total);
-      const failedSymbols = margins.filter((margin) => !margin.total).map((margin) => margin.tradingsymbol);
+      const fetchedSymbols = new Set(fetchedMargins.map((margin) => margin.tradingsymbol));
 
       allMargins.push(...fetchedMargins);
-      remainingSymbols = failedSymbols;
+      remainingSymbols = remainingSymbols.filter((symbol) => !fetchedSymbols.has(symbol));
 
       // if (failedSymbols.length > 0) {
       //   logger.warn(`Attempt ${attempt}/${MAX_RETRIES}: Failed to fetch margins for ${failedSymbols.length} symbols`);

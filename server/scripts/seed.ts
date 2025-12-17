@@ -18,7 +18,9 @@ async function seedInstruments() {
     (instrument) =>
       instrument.instrument_token &&
       underlyingSymbols.includes(instrument.name) &&
-      instrumentTypes.includes(instrument.instrument_type)
+      instrumentTypes.includes(instrument.instrument_type) &&
+      instrument.expiry &&
+      instrument.expiry > new Date()
   );
 
   logger.info(`Seeding ${validInstruments.length} MCX instruments`);
