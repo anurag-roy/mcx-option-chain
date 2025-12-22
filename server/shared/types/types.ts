@@ -24,4 +24,5 @@ export type OptionChain = Instrument & {
   delta: number;
   av: number;
   dv: number;
+  addedValue: number;
 };

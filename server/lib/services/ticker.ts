@@ -312,6 +312,13 @@ export class TickerService {
         T,
         instrument.instrumentType as 'CE' | 'PE'
       );
+
+      // Calculate addedValue (Return Value / |Delta|)
+      if (instrument.delta !== 0 && instrument.returnValue) {
+        instrument.addedValue = instrument.returnValue / Math.abs(instrument.delta);
+      } else {
+        instrument.addedValue = 0;
+      }
     }
 
     return Object.values(this.optionChain).filter((o) => o.sellValue > o.returnValue);
@@ -439,6 +446,7 @@ export class TickerService {
           delta: 0,
           av: 0,
           dv: 0,
+          addedValue: 0,
         };
       }
     }

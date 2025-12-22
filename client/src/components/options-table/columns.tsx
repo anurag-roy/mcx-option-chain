@@ -3,6 +3,7 @@ import type { OptionChain } from '@client/types/option-chain';
 import type { ColumnDef, RowData } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { PlusCircleIcon } from 'lucide-react';
+import type React from 'react';
 import { DataTableColumnHeader } from './column-header';
 
 // Extend TanStack Table meta to include our callback
@@ -15,6 +16,25 @@ declare module '@tanstack/react-table' {
 
 const green = 'bg-emerald-50/60 text-emerald-800 ring-emerald-100 dark:bg-emerald-900/10 dark:text-emerald-500';
 const red = 'bg-red-50/60 text-red-800 ring-red-100 dark:bg-red-900/10 dark:text-red-500';
+
+/**
+ * Format a number in scientific notation with JSX superscripts
+ * e.g., 0.002446 → "2.4460 × 10^(-3)" rendered as JSX with <sup>
+ */
+export function formatScientific(value: number, decimalPlaces = 4): React.ReactNode {
+  if (value === 0) return '0';
+
+  const exponent = Math.floor(Math.log10(Math.abs(value)));
+  const coefficient = value / Math.pow(10, exponent);
+
+  const coeffStr = coefficient.toFixed(decimalPlaces);
+
+  return (
+    <>
+      {coeffStr} × 10<sup>{exponent}</sup>
+    </>
+  );
+}
 
 export const columns: ColumnDef<OptionChain>[] = [
   {
@@ -170,38 +190,28 @@ export const columns: ColumnDef<OptionChain>[] = [
   {
     id: 'addedValue',
     header: ({ table, column }) => (
-      <DataTableColumnHeader table={table} column={column} title='AV' tooltip='Added Value (RV / Delta)' />
+      <DataTableColumnHeader table={table} column={column} title='AV' tooltip='Added Value (RV / |Delta|)' />
     ),
-    accessorFn: (row) => {
-      if (!row.delta || row.delta === 0 || !row.returnValue) return null;
-      return row.returnValue / row.delta;
-    },
+    accessorFn: (row) => row.addedValue,
     cell: ({ row }) => {
-      const { delta, returnValue } = row.original;
+      const { addedValue } = row.original;
 
-      if (!delta || delta === 0 || !returnValue) {
+      if (!addedValue) {
         return (
           <div className='bg-gray-50/60 p-2 text-center text-gray-500 dark:bg-gray-900/20 dark:text-gray-400'>N/A</div>
         );
       }
 
-      const addedValue = returnValue / delta;
       const valueColor =
         addedValue >= 0
           ? 'bg-emerald-50/60 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-500'
           : 'bg-red-50/60 text-red-800 dark:bg-red-900/20 dark:text-red-500';
 
-      return <div className={cn('p-2 text-right font-medium tabular-nums', valueColor)}>{addedValue.toFixed(4)}</div>;
+      return <div className={cn('p-2 text-right font-medium', valueColor)}>{formatScientific(addedValue)}</div>;
     },
     sortingFn: (rowA, rowB) => {
-      const deltaA = rowA.original.delta;
-      const deltaB = rowB.original.delta;
-      const rvA = rowA.original.returnValue;
-      const rvB = rowB.original.returnValue;
-
-      const addedValueA = deltaA && deltaA !== 0 && rvA ? rvA / deltaA : -Infinity;
-      const addedValueB = deltaB && deltaB !== 0 && rvB ? rvB / deltaB : -Infinity;
-
+      const addedValueA = rowA.original.addedValue || -Infinity;
+      const addedValueB = rowB.original.addedValue || -Infinity;
       return addedValueA - addedValueB;
     },
   },

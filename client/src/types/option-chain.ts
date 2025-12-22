@@ -42,6 +42,7 @@ export type OptionChain = {
   delta: number;
   av: number;
   dv: number;
+  addedValue: number;
 };
 
 export type OptionChainData = Record<number, OptionChain>;
