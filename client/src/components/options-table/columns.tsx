@@ -167,6 +167,44 @@ export const columns: ColumnDef<OptionChain>[] = [
     header: 'Sell Value',
     cell: ({ row }) => <div className='p-2 text-right tabular-nums'>{row.original.sellValue.toFixed(2)}</div>,
   },
+  {
+    id: 'addedValue',
+    header: ({ table, column }) => (
+      <DataTableColumnHeader table={table} column={column} title='AV' tooltip='Added Value (RV / Delta)' />
+    ),
+    accessorFn: (row) => {
+      if (!row.delta || row.delta === 0 || !row.returnValue) return null;
+      return row.returnValue / row.delta;
+    },
+    cell: ({ row }) => {
+      const { delta, returnValue } = row.original;
+
+      if (!delta || delta === 0 || !returnValue) {
+        return (
+          <div className='bg-gray-50/60 p-2 text-center text-gray-500 dark:bg-gray-900/20 dark:text-gray-400'>N/A</div>
+        );
+      }
+
+      const addedValue = returnValue / delta;
+      const valueColor =
+        addedValue >= 0
+          ? 'bg-emerald-50/60 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-500'
+          : 'bg-red-50/60 text-red-800 dark:bg-red-900/20 dark:text-red-500';
+
+      return <div className={cn('p-2 text-right font-medium tabular-nums', valueColor)}>{addedValue.toFixed(4)}</div>;
+    },
+    sortingFn: (rowA, rowB) => {
+      const deltaA = rowA.original.delta;
+      const deltaB = rowB.original.delta;
+      const rvA = rowA.original.returnValue;
+      const rvB = rowB.original.returnValue;
+
+      const addedValueA = deltaA && deltaA !== 0 && rvA ? rvA / deltaA : -Infinity;
+      const addedValueB = deltaB && deltaB !== 0 && rvB ? rvB / deltaB : -Infinity;
+
+      return addedValueA - addedValueB;
+    },
+  },
 ];
 
 export const numericCols = [
@@ -178,4 +216,5 @@ export const numericCols = [
   'orderMargin',
   'delta',
   'sigmaXI',
+  'addedValue',
 ];

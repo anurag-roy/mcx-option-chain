@@ -19,7 +19,7 @@ interface DataTableProps {
 }
 
 export const DataTable = memo(function DataTable({ columns, data, onSelectOption }: DataTableProps) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'addedValue', desc: true }]);
 
   const table = useReactTable({
     data,
