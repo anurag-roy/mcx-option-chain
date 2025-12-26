@@ -284,6 +284,10 @@ export class TickerService {
         if (instrument.orderMargin > 0) {
           instrument.returnValue = instrument.sellValue / instrument.orderMargin;
         }
+      } else {
+        instrument.bid = 0;
+        instrument.sellValue = 0;
+        instrument.returnValue = 0;
       }
 
       instrument.sd = workingDaysCache.calculateSD(av, instrument.expiry);

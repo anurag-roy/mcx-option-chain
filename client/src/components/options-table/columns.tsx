@@ -183,11 +183,6 @@ export const columns: ColumnDef<OptionChain>[] = [
   //   ),
   // },
   {
-    accessorKey: 'sellValue',
-    header: 'Sell Value',
-    cell: ({ row }) => <div className='p-2 text-right tabular-nums'>{row.original.sellValue.toFixed(2)}</div>,
-  },
-  {
     id: 'addedValue',
     header: ({ table, column }) => (
       <DataTableColumnHeader table={table} column={column} title='AV' tooltip='Added Value (RV / |Delta|)' />
@@ -214,6 +209,11 @@ export const columns: ColumnDef<OptionChain>[] = [
       const addedValueB = rowB.original.addedValue || -Infinity;
       return addedValueA - addedValueB;
     },
+  },
+  {
+    accessorKey: 'sellValue',
+    header: 'Sell Value',
+    cell: ({ row }) => <div className='p-2 text-right tabular-nums'>{row.original.sellValue.toFixed(2)}</div>,
   },
 ];
 
