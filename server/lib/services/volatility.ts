@@ -33,14 +33,10 @@ class VolatilityService {
       const isNumericVix = NUMERIC_VIX_SYMBOLS.includes(symbol as (typeof NUMERIC_VIX_SYMBOLS)[number]);
 
       // Create the getAv function based on whether VIX is numeric or a Yahoo Finance symbol
-      const getAv = isNumericVix
-        ? // For numeric VIX: read from settings service (allows dynamic updates)
-          async () => {
-            const vix = await settingsService.getVix(symbol);
-            return vix as number;
-          }
-        : // For symbol-based VIX: fetch from Yahoo Finance
-          () => getPrice(CONFIG[symbol].vix as string);
+      const getAv = async () => {
+        const vix = await settingsService.getVix(symbol);
+        return vix;
+      };
 
       setIntervalNow(async () => {
         try {
