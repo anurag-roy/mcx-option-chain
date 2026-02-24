@@ -16,7 +16,8 @@ export const Route = createFileRoute('/settings')({
 
 interface CommodityConfig {
   symbol: string;
-  vix: number;
+  vix: number | string;
+  vixUpdatable: boolean;
   bidBalance: number;
   multiplier: number;
 }
@@ -72,16 +73,21 @@ function RouteComponent() {
       symbol: string;
       updates: { vix?: number; bidBalance?: number; multiplier?: number };
     }) => {
-      await api.settings.commodities[':symbol'].$put({
+      const res = await api.settings.commodities[':symbol'].$put({
         param: { symbol: symbol as 'GOLD' },
         json: updates,
       });
+      return res.json();
     },
     onSuccess: (data) => {
-      toast.success(`Settings updated for ${editingSymbol}`);
-      queryClient.invalidateQueries({ queryKey: ['commodities'] });
-      setEditingSymbol(null);
-      setEditState(null);
+      if (data.success) {
+        toast.success(`Settings updated for ${editingSymbol}`);
+        queryClient.invalidateQueries({ queryKey: ['commodities'] });
+        setEditingSymbol(null);
+        setEditState(null);
+      } else {
+        toast.error(`Failed to update: ${data.errors?.join(', ')}`);
+      }
     },
     onError: (error) => {
       toast.error('Failed to update commodity settings');
@@ -127,7 +133,7 @@ function RouteComponent() {
   const startEditing = (commodity: CommodityConfig) => {
     setEditingSymbol(commodity.symbol);
     setEditState({
-      vix: String(commodity.vix),
+      vix: commodity.vixUpdatable ? String(commodity.vix) : undefined,
       bidBalance: String(commodity.bidBalance),
       multiplier: String(commodity.multiplier),
     });
@@ -297,7 +303,7 @@ function RouteComponent() {
                         <TableRow key={commodity.symbol} className={isEditing ? 'bg-muted/50' : ''}>
                           <TableCell className='pl-4 font-medium'>{commodity.symbol}</TableCell>
                           <TableCell>
-                            {isEditing ? (
+                            {isEditing && commodity.vixUpdatable ? (
                               <Input
                                 type='number'
                                 step='0.1'
@@ -307,7 +313,9 @@ function RouteComponent() {
                                 className='w-24'
                               />
                             ) : (
-                              <span>{commodity.vix}</span>
+                              <span className={commodity.vixUpdatable ? '' : 'text-muted-foreground'}>
+                                {commodity.vix}
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>

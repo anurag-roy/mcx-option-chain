@@ -54,7 +54,7 @@ const DEFAULT_VALUES = buildDefaultValues();
  */
 export interface CommodityConfig {
   symbol: Symbol;
-  vix: number;
+  vix: number | string; // number for updatable, string (symbol) for readonly
   vixUpdatable: boolean;
   bidBalance: number;
   multiplier: number;
@@ -132,17 +132,32 @@ class SettingsService {
 
   /**
    * Get VIX for a symbol.
+   * For numeric VIX symbols, returns the stored value.
+   * For symbol-based VIX, returns the Yahoo Finance symbol from CONFIG.
    */
-  async getVix(symbol: Symbol): Promise<number> {
+  async getVix(symbol: Symbol): Promise<number | string> {
     const config = CONFIG[symbol];
-    return this.getNumber(commodityKey(symbol, 'VIX'), config.vix);
+    const isNumeric = NUMERIC_VIX_SYMBOLS.includes(symbol as (typeof NUMERIC_VIX_SYMBOLS)[number]);
+
+    if (isNumeric) {
+      return this.getNumber(commodityKey(symbol, 'VIX'), config.vix as number);
+    }
+
+    // Return the Yahoo Finance symbol for non-numeric VIX
+    return config.vix as string;
   }
 
   /**
-   * Set VIX for a symbol.
+   * Set VIX for a symbol (only works for numeric VIX symbols).
    */
-  async setVix(symbol: Symbol, value: number): Promise<void> {
+  async setVix(symbol: Symbol, value: number): Promise<boolean> {
+    const isNumeric = NUMERIC_VIX_SYMBOLS.includes(symbol as (typeof NUMERIC_VIX_SYMBOLS)[number]);
+    if (!isNumeric) {
+      logger.warn(`Cannot set VIX for ${symbol}: not a numeric VIX symbol`);
+      return false;
+    }
     await this.set(commodityKey(symbol, 'VIX'), value.toString());
+    return true;
   }
 
   /**
@@ -200,9 +215,14 @@ class SettingsService {
   async updateCommodityConfig(
     symbol: Symbol,
     updates: { vix?: number; bidBalance?: number; multiplier?: number }
-  ): Promise<void> {
+  ): Promise<{ success: boolean; errors: string[] }> {
+    const errors: string[] = [];
+
     if (updates.vix !== undefined) {
-      await this.setVix(symbol, updates.vix);
+      const success = await this.setVix(symbol, updates.vix);
+      if (!success) {
+        errors.push(`VIX is not updatable for ${symbol}`);
+      }
     }
 
     if (updates.bidBalance !== undefined) {
@@ -212,7 +232,8 @@ class SettingsService {
     if (updates.multiplier !== undefined) {
       await this.setMultiplier(symbol, updates.multiplier);
     }
-    logger.info(`Commodity config updated: ${symbol} = ${JSON.stringify(updates)}`);
+
+    return { success: errors.length === 0, errors };
   }
 }
 

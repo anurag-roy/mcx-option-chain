@@ -40,7 +40,11 @@ export const settingsRoute = new Hono()
         throw new HTTPException(400, { message: 'At least one field (vix, bidBalance, multiplier) must be provided' });
       }
 
-      await settingsService.updateCommodityConfig(symbol, updates);
+      const result = await settingsService.updateCommodityConfig(symbol, updates);
+
+      if (!result.success) {
+        return c.json({ success: false, errors: result.errors }, 400);
+      }
 
       // Return updated config
       const configs = await settingsService.getAllCommodityConfigs();
