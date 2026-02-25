@@ -62,7 +62,7 @@
     "p-queue": "^9.0.1",
     "picocolors": "^1.1.1",
     "tough-cookie": "^6.0.0",
-    "yahoo-finance2": "^3.10.2",
+    "yahoo-finance2": "^3.13.0",
     "zod": "^4.1.12"
   }
 }
