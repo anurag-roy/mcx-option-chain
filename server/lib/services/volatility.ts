@@ -42,15 +42,18 @@ class VolatilityService {
         : // For symbol-based VIX: fetch from Yahoo Finance
           () => getPrice(CONFIG[symbol].vix as string);
 
-      setIntervalNow(async () => {
-        try {
-          const av = await getAv();
-          const dv = workingDaysCache.getDvFromAv(av);
-          this.values[symbol] = { av, dv };
-        } catch (error) {
-          logger.error(`Error fetching volatility for ${symbol}:`, error);
-        }
-      }, 1000 * 60); // 1 minute
+      setIntervalNow(
+        async () => {
+          try {
+            const av = await getAv();
+            const dv = workingDaysCache.getDvFromAv(av);
+            this.values[symbol] = { av, dv };
+          } catch (error) {
+            logger.error(`Error fetching volatility for ${symbol}:`, error);
+          }
+        },
+        2 * 1000 * 60
+      ); // 2 minutes
     }
     logger.info('Volatility service initialized');
   }
