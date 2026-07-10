@@ -17,6 +17,9 @@ import type { WSContext } from 'hono/ws';
 import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
 
 export type OptionChainCallback = (data: Record<number, OptionChain>) => void;
+type Instrument = typeof instrumentsTable.$inferSelect;
+type DesiredOption = { instrument: Instrument; futExpiry: string; underlyingLtp: number };
+type RangeRefreshReason = 'subscribe' | 'ltp' | 'pending';
 
 interface ClientSubscription {
   ws: WSContext;
@@ -27,6 +30,7 @@ export class TickerService {
   private readonly OPTION_CHAIN_UPDATE_INTERVAL = 500;
   private readonly MARGIN_UPDATE_INTERVAL = 5000;
   private readonly COMMODITY_CONFIG_REFRESH_INTERVAL = 5000; // 5 seconds
+  private readonly RANGE_REFRESH_THROTTLE_MS = 2000;
 
   private ticker = new KiteTicker({
     api_key: env.KITE_API_KEY,
@@ -34,6 +38,7 @@ export class TickerService {
   });
   private clients: Map<string, ClientSubscription> = new Map();
   private subscribedTokens = new Set<number>();
+  private subscribedTokensBySymbol = new Map<Symbol, Set<number>>();
 
   /**
    * token to underlying and expiry
@@ -43,9 +48,14 @@ export class TickerService {
    * underlying to expiry to ltp
    */
   private futureLtps: Record<string, Record<string, number>> = {};
+  private optionInstrumentsBySymbol = new Map<Symbol, Map<string, Instrument[]>>();
 
   private optionChain: Record<number, OptionChain> = {};
   private isFetchingMargins = false;
+  private activeSdMultiplier: number | null = null;
+  private rangeRefreshTimers = new Map<Symbol, ReturnType<typeof setTimeout>>();
+  private rangeRefreshInFlight = new Set<Symbol>();
+  private pendingRangeRefresh = new Set<Symbol>();
 
   /**
    * Cached commodity config values (bidBalance, multiplier) for each symbol.
@@ -81,24 +91,234 @@ export class TickerService {
   }
 
   private subscribeToTokens(tokens: number[]) {
-    for (const token of tokens) {
-      if (this.subscribedTokens.has(token)) {
-        continue;
-      }
+    const tokensToSubscribe = tokens.filter((token) => !this.subscribedTokens.has(token));
+    if (tokensToSubscribe.length === 0) {
+      return [];
+    }
+
+    for (const token of tokensToSubscribe) {
       this.subscribedTokens.add(token);
     }
+
     if (this.subscribedTokens.size > 3000) {
       logger.warn('Subscribed tokens limit reached -', this.subscribedTokens.size);
     }
-    this.ticker.setMode('full', [...tokens]);
+    this.ticker.subscribe(tokensToSubscribe);
+    this.ticker.setMode(this.ticker.modeFull, tokensToSubscribe);
+
+    return tokensToSubscribe;
   }
 
   private unsubscribeFromTokens(tokens?: number[]) {
-    tokens = tokens ?? Array.from(this.subscribedTokens);
-    for (const token of tokens) {
+    const tokensToUnsubscribe = (tokens ?? Array.from(this.subscribedTokens)).filter((token) =>
+      this.subscribedTokens.has(token)
+    );
+    if (tokensToUnsubscribe.length === 0) {
+      return [];
+    }
+
+    for (const token of tokensToUnsubscribe) {
       this.subscribedTokens.delete(token);
     }
-    this.ticker.unsubscribe([...tokens]);
+    this.ticker.unsubscribe(tokensToUnsubscribe);
+
+    return tokensToUnsubscribe;
+  }
+
+  private async loadOptionInstrumentsCache() {
+    logger.info('Loading option instruments cache');
+    const optionsQuery = db
+      .select()
+      .from(instrumentsTable)
+      .where(inArray(instrumentsTable.instrumentType, ['CE', 'PE']))
+      .orderBy(asc(instrumentsTable.name), asc(instrumentsTable.expiry), asc(instrumentsTable.strike));
+
+    const options = this.symbolsFilter
+      ? (await optionsQuery).filter((option) => this.symbolsFilter!.includes(option.name as Symbol))
+      : await optionsQuery;
+
+    this.optionInstrumentsBySymbol.clear();
+
+    for (const option of options) {
+      const symbol = option.name as Symbol;
+      let expiries = this.optionInstrumentsBySymbol.get(symbol);
+      if (!expiries) {
+        expiries = new Map<string, Instrument[]>();
+        this.optionInstrumentsBySymbol.set(symbol, expiries);
+      }
+
+      const instruments = expiries.get(option.expiry) ?? [];
+      instruments.push(option);
+      expiries.set(option.expiry, instruments);
+    }
+
+    logger.info(`Loaded ${options.length} option instruments into cache`);
+  }
+
+  private createOptionChainEntry(instrument: Instrument, futExpiry: string, underlyingLtp: number): OptionChain {
+    return {
+      ...instrument,
+      futExpiry,
+      underlyingLtp,
+      bid: 0,
+      marketDepth: null,
+      sellValue: 0,
+      strikePosition: 0,
+      orderMargin: 0,
+      returnValue: 0,
+      sd: 0,
+      sigmaN: 0,
+      sigmaX: 0,
+      sigmaXI: 0,
+      delta: 0,
+      av: 0,
+      dv: 0,
+      addedValue: 0,
+    };
+  }
+
+  private calculateDesiredOptionsForSymbol(underlying: Symbol, sdMultiplier: number) {
+    const expiries = this.optionInstrumentsBySymbol.get(underlying);
+    if (!expiries) {
+      throw new Error(`No option instruments loaded for ${underlying}`);
+    }
+
+    const desiredOptions = new Map<number, DesiredOption>();
+
+    for (const [expiry, options] of expiries.entries()) {
+      const [futExpiry] = Object.keys(this.futureLtps[underlying] ?? {})
+        .filter((e) => e > expiry)
+        .sort();
+      if (!futExpiry) {
+        logger.error(`No future expiry found for ${underlying} ${expiry}`);
+        continue;
+      }
+
+      const ltp = this.futureLtps[underlying]?.[futExpiry];
+      if (!ltp) {
+        throw new HTTPException(400, { message: `LTP not found for ${underlying} ${expiry}` });
+      }
+
+      let ceBound = ltp;
+      let peBound = ltp;
+
+      const av = volatilityService.values[underlying]?.av;
+      if (av) {
+        try {
+          const ceSigmas = workingDaysCache.calculateAllSigmas(av, sdMultiplier, expiry, 'CE');
+
+          ceBound = ltp + (ltp * ceSigmas.sigmaXI) / 100;
+          peBound = ltp - (ltp * ceSigmas.sigmaXI) / 100;
+        } catch (error) {
+          logger.error(`${underlying} ${expiry}: Error calculating sigmas:`, error);
+        }
+      }
+
+      const putStrikes = options
+        .filter((s) => s.instrumentType === 'PE')
+        .map((s) => s.strike!)
+        .sort((a, b) => b - a);
+
+      const callStrikes = options
+        .filter((s) => s.instrumentType === 'CE')
+        .map((s) => s.strike!)
+        .sort((a, b) => a - b);
+
+      const closestFloorStrike = putStrikes.find((strike) => strike <= peBound);
+      const closestCeilingStrike = callStrikes.find((strike) => strike >= ceBound);
+
+      const filteredInstruments = options.filter((s) => {
+        if (s.instrumentType === 'PE') {
+          return closestFloorStrike !== undefined ? s.strike! <= closestFloorStrike : false;
+        } else if (s.instrumentType === 'CE') {
+          return closestCeilingStrike !== undefined ? s.strike! >= closestCeilingStrike : false;
+        }
+        return false;
+      });
+
+      for (const instrument of filteredInstruments) {
+        desiredOptions.set(instrument.instrumentToken, { instrument, futExpiry, underlyingLtp: ltp });
+      }
+    }
+
+    return desiredOptions;
+  }
+
+  private applyDesiredOptionsForSymbol(
+    underlying: Symbol,
+    desiredOptions: Map<number, DesiredOption>,
+    reason: RangeRefreshReason
+  ) {
+    const previousTokens = this.subscribedTokensBySymbol.get(underlying) ?? new Set<number>();
+    const desiredTokens = new Set(desiredOptions.keys());
+    const tokensToUnsubscribe = Array.from(previousTokens).filter((token) => !desiredTokens.has(token));
+    const tokensToSubscribe = Array.from(desiredTokens).filter((token) => !previousTokens.has(token));
+
+    for (const token of tokensToUnsubscribe) {
+      delete this.optionChain[token];
+    }
+    this.unsubscribeFromTokens(tokensToUnsubscribe);
+
+    for (const [token, desired] of desiredOptions.entries()) {
+      const existingOption = this.optionChain[token];
+      if (existingOption) {
+        existingOption.futExpiry = desired.futExpiry;
+        existingOption.underlyingLtp = desired.underlyingLtp;
+      } else {
+        this.optionChain[token] = this.createOptionChainEntry(
+          desired.instrument,
+          desired.futExpiry,
+          desired.underlyingLtp
+        );
+      }
+    }
+
+    this.subscribeToTokens(tokensToSubscribe);
+    this.subscribedTokensBySymbol.set(underlying, desiredTokens);
+
+    if (tokensToSubscribe.length > 0 || tokensToUnsubscribe.length > 0) {
+      logger.info(
+        `${underlying} range refresh (${reason}): +${tokensToSubscribe.length}, -${tokensToUnsubscribe.length}, total ${desiredTokens.size}`
+      );
+    }
+  }
+
+  private refreshSymbolRange(underlying: Symbol, sdMultiplier: number, reason: RangeRefreshReason) {
+    if (this.rangeRefreshInFlight.has(underlying)) {
+      this.pendingRangeRefresh.add(underlying);
+      return;
+    }
+
+    this.rangeRefreshInFlight.add(underlying);
+
+    try {
+      const desiredOptions = this.calculateDesiredOptionsForSymbol(underlying, sdMultiplier);
+      this.applyDesiredOptionsForSymbol(underlying, desiredOptions, reason);
+    } catch (error) {
+      logger.error(`Failed to refresh option range for ${underlying}:`, error);
+    } finally {
+      this.rangeRefreshInFlight.delete(underlying);
+    }
+
+    if (this.pendingRangeRefresh.delete(underlying) && this.activeSdMultiplier !== null) {
+      this.refreshSymbolRange(underlying, this.activeSdMultiplier, 'pending');
+    }
+  }
+
+  private scheduleRangeRefresh(underlying: Symbol) {
+    if (this.activeSdMultiplier === null || this.rangeRefreshTimers.has(underlying)) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      this.rangeRefreshTimers.delete(underlying);
+
+      if (this.activeSdMultiplier !== null) {
+        this.refreshSymbolRange(underlying, this.activeSdMultiplier, 'ltp');
+      }
+    }, this.RANGE_REFRESH_THROTTLE_MS);
+
+    this.rangeRefreshTimers.set(underlying, timeout);
   }
 
   async init() {
@@ -121,6 +341,8 @@ export class TickerService {
       this.futureLtps[future.name]![future.expiry] = 0;
     }
     logger.info(`Loaded futures data for ${futures.length} instruments`);
+
+    await this.loadOptionInstrumentsCache();
 
     logger.info('Connecting to Kite Ticker');
     await new Promise((resolve, reject) => {
@@ -146,8 +368,11 @@ export class TickerService {
       for (const tick of ticks) {
         if (tick.instrument_token in this.futureTokensMap) {
           const { underlying, expiry } = this.futureTokensMap[tick.instrument_token]!;
+          const previousLtp = this.futureLtps[underlying]![expiry];
           this.futureLtps[underlying]![expiry] = tick.last_price;
-          // TODO: If FUT ltp changes, check if ATM is changed or not
+          if (previousLtp !== tick.last_price) {
+            this.scheduleRangeRefresh(underlying as Symbol);
+          }
         } else if (tick.mode === 'full') {
           const instrument = this.optionChain[tick.instrument_token];
           if (!instrument) {
@@ -160,10 +385,9 @@ export class TickerService {
       }
     });
 
-    this.ticker.setMode(
-      'ltp',
-      futures.map((f) => f.instrumentToken)
-    );
+    const futureTokens = futures.map((f) => f.instrumentToken);
+    this.ticker.subscribe(futureTokens);
+    this.ticker.setMode(this.ticker.modeLTP, futureTokens);
 
     // Update option chain
     setInterval(() => {
@@ -329,131 +553,7 @@ export class TickerService {
   }
 
   public async subscribe(underlying: string, sdMultiplier: number) {
-    const distinctOptionExpiries = await db
-      .selectDistinct({ expiry: instrumentsTable.expiry })
-      .from(instrumentsTable)
-      .where(and(eq(instrumentsTable.name, underlying), inArray(instrumentsTable.instrumentType, ['CE', 'PE'])));
-
-    for (const { expiry } of distinctOptionExpiries) {
-      const [futExpiry] = Object.keys(this.futureLtps[underlying]!)
-        .filter((e) => e > expiry)
-        .sort();
-      if (!futExpiry) {
-        console.error(`No future expiry found for ${underlying} ${expiry}`);
-        continue;
-      }
-
-      const ltp = this.futureLtps[underlying]?.[futExpiry];
-      if (!ltp) {
-        throw new HTTPException(400, { message: `LTP not found for ${underlying} ${expiry}` });
-      }
-
-      let ceBound = ltp;
-      let peBound = ltp;
-
-      const av = volatilityService.values[underlying]?.av;
-      if (av) {
-        try {
-          // Calculate sigmas for both CE and PE
-          const ceSigmas = workingDaysCache.calculateAllSigmas(av, sdMultiplier, expiry, 'CE');
-
-          // Calculate asymmetric bounds
-          // For CE: Ceiling = LTP + (σₓᵢ %)
-          ceBound = ltp + (ltp * ceSigmas.sigmaXI) / 100;
-
-          // For PE: Floor = LTP - (σₓᵢ %)
-          peBound = ltp - (ltp * ceSigmas.sigmaXI) / 100;
-
-          logger.info(
-            `${underlying} ${expiry}: LTP: ${ltp}, AV: ${av}, sdMultiplier: ${sdMultiplier}, minutes in last year: ${workingDaysCache.getMarketMinutesInLastYear()}, minutes till expiry: ${workingDaysCache.getMarketMinutesTillExpiry(expiry)}`
-          );
-          logger.info(
-            `${underlying} ${expiry}: Sigmas: σ=${ceSigmas.sigma.toFixed(3)}, σₙ=${ceSigmas.sigmaN.toFixed(3)}, σₓ=${ceSigmas.sigmaX.toFixed(3)}, σₓᵢ=${ceSigmas.sigmaXI.toFixed(3)}`
-          );
-          logger.info(
-            `${underlying} ${expiry}: CE Bound (ceiling): ${ceBound.toFixed(2)}, PE Bound (floor): ${peBound.toFixed(2)}`
-          );
-        } catch (error) {
-          logger.error(`${underlying} ${expiry}: Error calculating sigmas:`, error);
-          // Fallback to LTP if calculation fails
-          ceBound = ltp;
-          peBound = ltp;
-        }
-      }
-
-      // New asymmetric sigma-based filtering logic
-      // Get all available strikes for PUTs and CALLs
-      const options = await db
-        .select()
-        .from(instrumentsTable)
-        .where(
-          and(
-            eq(instrumentsTable.name, underlying),
-            inArray(instrumentsTable.instrumentType, ['CE', 'PE']),
-            eq(instrumentsTable.expiry, expiry)
-          )
-        )
-        .orderBy(asc(instrumentsTable.strike));
-
-      const putStrikes = options
-        .filter((s) => s.instrumentType === 'PE')
-        .map((s) => s.strike!)
-        .sort((a, b) => b - a); // Sort descending for PUTs
-
-      const callStrikes = options
-        .filter((s) => s.instrumentType === 'CE')
-        .map((s) => s.strike!)
-        .sort((a, b) => a - b); // Sort ascending for CALLs
-
-      // Find closest floor strike to PE floor bound
-      const closestFloorStrike = putStrikes.find((strike) => strike <= peBound);
-
-      // Find closest ceiling strike to CE ceiling bound
-      const closestCeilingStrike = callStrikes.find((strike) => strike >= ceBound);
-
-      logger.info(
-        `Asymmetric filtering: PE floor=${peBound.toFixed(2)}, CE ceiling=${ceBound.toFixed(2)}, closestFloorStrike=${closestFloorStrike ?? 'N/A'}, closestCeilingStrike=${closestCeilingStrike ?? 'N/A'}`
-      );
-
-      // Filter instruments based on asymmetric logic
-      const filteredInstruments = options.filter((s) => {
-        if (s.instrumentType === 'PE') {
-          // Get all PUTs with strikes below (and including) the closest floor strike
-          return closestFloorStrike ? s.strike! <= closestFloorStrike! : false;
-        } else if (s.instrumentType === 'CE') {
-          // Get all CALLs with strikes above (and including) the closest ceiling strike
-          return closestCeilingStrike ? s.strike! >= closestCeilingStrike! : false;
-        }
-        return false;
-      });
-
-      logger.info(`Filtered ${filteredInstruments.length} instruments out of ${options.length} total`);
-
-      // this.unsubscribeFromTokens();
-      this.subscribeToTokens(filteredInstruments.map((s) => s.instrumentToken));
-
-      for (const instrument of filteredInstruments) {
-        this.optionChain[instrument.instrumentToken] = {
-          ...instrument,
-          futExpiry,
-          underlyingLtp: ltp,
-          bid: 0,
-          marketDepth: null,
-          sellValue: 0,
-          strikePosition: 0,
-          orderMargin: 0,
-          returnValue: 0,
-          sd: 0,
-          sigmaN: 0,
-          sigmaX: 0,
-          sigmaXI: 0,
-          delta: 0,
-          av: 0,
-          dv: 0,
-          addedValue: 0,
-        };
-      }
-    }
+    this.refreshSymbolRange(underlying as Symbol, sdMultiplier, 'subscribe');
   }
 
   /**
@@ -468,39 +568,14 @@ export class TickerService {
   public async subscribeAll(sdMultiplier: number) {
     const symbols = this.symbolsFilter ?? (Object.keys(CONFIG) as Symbol[]);
     logger.info(`Subscribing to ${symbols.length} symbols with sdMultiplier: ${sdMultiplier}`);
-
-    // Store old subscribed tokens to determine what to unsubscribe
-    const oldTokens = new Set(this.subscribedTokens);
-
-    // Clear current option chain and subscribed tokens
-    // We'll rebuild them with the new SD multiplier
-    this.optionChain = {};
-    this.subscribedTokens.clear();
+    const oldTokenCount = this.subscribedTokens.size;
+    this.activeSdMultiplier = sdMultiplier;
 
     for (const symbol of symbols) {
-      try {
-        await this.subscribe(symbol, sdMultiplier);
-      } catch (error) {
-        logger.error(`Failed to subscribe to ${symbol}:`, error);
-      }
+      this.refreshSymbolRange(symbol, sdMultiplier, 'subscribe');
     }
 
-    // Determine which tokens to unsubscribe (tokens that were in old but not in new)
-    const tokensToUnsubscribe = Array.from(oldTokens).filter((token) => !this.subscribedTokens.has(token));
-
-    if (tokensToUnsubscribe.length > 0) {
-      logger.info(`Unsubscribing from ${tokensToUnsubscribe.length} tokens that are out of new range`);
-      this.unsubscribeFromTokens(tokensToUnsubscribe);
-    }
-
-    // Determine which tokens to subscribe (tokens that are in new but not in old)
-    const tokensToSubscribe = Array.from(this.subscribedTokens).filter((token) => !oldTokens.has(token));
-
-    if (tokensToSubscribe.length > 0) {
-      logger.info(`Subscribing to ${tokensToSubscribe.length} new tokens in range`);
-    }
-
-    logger.info(`Total subscribed tokens: ${this.subscribedTokens.size} (was ${oldTokens.size})`);
+    logger.info(`Total subscribed option tokens: ${this.subscribedTokens.size} (was ${oldTokenCount})`);
   }
 
   /**
@@ -614,6 +689,10 @@ export class TickerService {
   }
 
   public async disconnect() {
+    for (const timer of this.rangeRefreshTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.rangeRefreshTimers.clear();
     this.ticker.disconnect();
   }
 }
