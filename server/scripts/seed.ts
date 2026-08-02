@@ -1,3 +1,4 @@
+import { TZDate } from '@date-fns/tz';
 import { db } from '@server/db';
 import { holidaysTable, instrumentsTable } from '@server/db/schema';
 import { logger } from '@server/lib/logger';
@@ -8,20 +9,29 @@ import { chunk } from 'es-toolkit';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+const INDIA_TIMEZONE = 'Asia/Kolkata';
+
 async function seedInstruments() {
   const CHUNK_SIZE = 1_000;
   const underlyingSymbols = Object.keys(CONFIG);
   const instrumentTypes = ['FUT', 'CE', 'PE'];
+  // Include contracts expiring today (MCX calendar day in IST)
+  const todayStr = format(new TZDate(new Date(), INDIA_TIMEZONE), 'yyyy-MM-dd');
 
   const mcxInstruments = await kiteService.getInstruments(['MCX']);
-  const validInstruments = mcxInstruments.filter(
-    (instrument) =>
-      instrument.instrument_token &&
-      underlyingSymbols.includes(instrument.name) &&
-      instrumentTypes.includes(instrument.instrument_type) &&
-      instrument.expiry &&
-      instrument.expiry > new Date()
-  );
+  const validInstruments = mcxInstruments.filter((instrument) => {
+    if (
+      !instrument.instrument_token ||
+      !underlyingSymbols.includes(instrument.name) ||
+      !instrumentTypes.includes(instrument.instrument_type) ||
+      !instrument.expiry
+    ) {
+      return false;
+    }
+
+    const expiryStr = instrument.expiry.toISOString().split('T')[0]!;
+    return expiryStr >= todayStr;
+  });
 
   logger.info(`Seeding ${validInstruments.length} MCX instruments`);
 
