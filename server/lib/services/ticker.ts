@@ -12,7 +12,6 @@ import { CONFIG, type Symbol } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { chunk } from 'es-toolkit';
-import { HTTPException } from 'hono/http-exception';
 import type { WSContext } from 'hono/ws';
 import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
 
@@ -195,8 +194,11 @@ export class TickerService {
       }
 
       const ltp = this.futureLtps[underlying]?.[futExpiry];
-      if (!ltp) {
-        throw new HTTPException(400, { message: `LTP not found for ${underlying} ${expiry}` });
+      if (ltp === undefined || ltp <= 0) {
+        logger.warn(
+          `Skipping ${underlying} options expiring ${expiry}: LTP not available for future expiring ${futExpiry}`
+        );
+        continue;
       }
 
       let ceBound = ltp;
