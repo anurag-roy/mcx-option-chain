@@ -106,7 +106,7 @@ export const columns: ColumnDef<OptionChain>[] = [
           onClick={() => table.options.meta?.onSelectOption?.(row.original)}
         >
           <PlusCircleIcon className='h-4 w-4 shrink-0' />
-          <span className='rounded-full px-2 py-0.25 tabular-nums ring-1 ring-gray-400 dark:ring-gray-600'>
+          <span className='rounded-full px-2 py-px tabular-nums ring-1 ring-gray-400 dark:ring-gray-600'>
             {(row.original.returnValue * 100).toFixed(2)}
           </span>
         </button>
@@ -156,7 +156,7 @@ export const columns: ColumnDef<OptionChain>[] = [
         <div className={cn('p-2 text-center font-medium tabular-nums', deltaColor)}>{(delta * 100).toFixed(7)}</div>
       );
     },
-    sortingFn: (rowA, rowB) => (rowA.original.delta ?? 0) - (rowB.original.delta ?? 0),
+    sortingFn: (rowA, rowB) => Math.abs(rowA.original.delta ?? 0) - Math.abs(rowB.original.delta ?? 0),
   },
   {
     id: 'sigmaXI',
