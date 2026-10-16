@@ -77,6 +77,9 @@ function RouteComponent() {
         param: { symbol: symbol as 'GOLD' },
         json: updates,
       });
+      if (!res.ok) {
+        throw new Error('Failed to update commodity settings');
+      }
       return res.json();
     },
     onSuccess: (data) => {

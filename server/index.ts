@@ -12,6 +12,7 @@ import { env } from '@server/lib/env';
 import { logger } from '@server/lib/logger';
 import { kiteService } from '@server/lib/services/kite';
 import { settingsService } from '@server/lib/services/settings';
+import { updateWorkerVix } from '@server/lib/update-worker-vix';
 import { WORKER_GROUPS } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
 import { fork, type ChildProcess } from 'node:child_process';
@@ -128,6 +129,15 @@ async function main() {
     }
     process.exit(1);
   }
+
+  settingsService.setVixUpdateCallback(async (symbol, value) => {
+    const workerIndex = WORKER_GROUPS.findIndex((group) => group.some((workerSymbol) => workerSymbol === symbol));
+    const worker = workers[workerIndex];
+    if (!worker) {
+      throw new Error(`No worker available for ${symbol}`);
+    }
+    await updateWorkerVix(worker, symbol, value);
+  });
 
   // Start HTTP server
   const server = serve(

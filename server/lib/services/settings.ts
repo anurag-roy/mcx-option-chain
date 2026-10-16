@@ -61,6 +61,12 @@ export interface CommodityConfig {
 }
 
 class SettingsService {
+  private vixUpdateCallback: ((symbol: Symbol, value: number) => Promise<void>) | null = null;
+
+  setVixUpdateCallback(callback: (symbol: Symbol, value: number) => Promise<void>) {
+    this.vixUpdateCallback = callback;
+  }
+
   /**
    * Get a setting value by key.
    * Returns null if the setting doesn't exist.
@@ -157,6 +163,7 @@ class SettingsService {
       return false;
     }
     await this.set(commodityKey(symbol, 'VIX'), value.toString());
+    await this.vixUpdateCallback?.(symbol, value);
     return true;
   }
 

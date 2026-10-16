@@ -21,10 +21,14 @@ const tickerService = new TickerService();
 // Message types for IPC communication
 export type WorkerMessage =
   | { type: 'optionChain'; data: Record<number, OptionChain> }
+  | { type: 'vixUpdated'; requestId: string; error?: string }
   | { type: 'ready' }
   | { type: 'error'; error: string };
 
-export type CoordinatorMessage = { type: 'subscribe'; sdMultiplier: number } | { type: 'shutdown' };
+export type CoordinatorMessage =
+  | { type: 'subscribe'; sdMultiplier: number }
+  | { type: 'updateVix'; requestId: string; symbol: Symbol; value: number }
+  | { type: 'shutdown' };
 
 const workerId = env.WORKER_ID ?? 0;
 const logPrefix = `[Worker ${workerId}]`;
@@ -42,6 +46,7 @@ logger.info(`${logPrefix} Starting worker for symbols: ${symbols.join(', ')}`);
 // Set symbols filter for services
 volatilityService.setSymbolsFilter(symbols);
 tickerService.setSymbolsFilter(symbols);
+volatilityService.setUpdateCallback((symbol) => tickerService.refreshVolatility(symbol));
 
 // Set up data callback to send option chain to coordinator
 tickerService.setDataCallback((data) => {
@@ -89,6 +94,21 @@ async function main() {
     if (msg.type === 'subscribe') {
       logger.info(`${logPrefix} Received subscribe command with sdMultiplier: ${msg.sdMultiplier}`);
       await tickerService.subscribeAll(msg.sdMultiplier);
+    } else if (msg.type === 'updateVix') {
+      try {
+        if (!symbols.includes(msg.symbol)) {
+          throw new Error(`Worker does not handle ${msg.symbol}`);
+        }
+        volatilityService.updateVix(msg.symbol, msg.value);
+        process.send?.({ type: 'vixUpdated', requestId: msg.requestId } satisfies WorkerMessage);
+      } catch (error) {
+        logger.error(`${logPrefix} Failed to update VIX for ${msg.symbol}:`, error);
+        process.send?.({
+          type: 'vixUpdated',
+          requestId: msg.requestId,
+          error: String(error),
+        } satisfies WorkerMessage);
+      }
     } else if (msg.type === 'shutdown') {
       logger.info(`${logPrefix} Received shutdown command`);
       await tickerService.disconnect();

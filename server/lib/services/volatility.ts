@@ -11,6 +11,8 @@ const getPrice = (symbol: string) =>
 
 class VolatilityService {
   values: Record<string, { av: number; dv: number }> = {};
+  private revisions = new Map<Symbol, number>();
+  private updateCallback: ((symbol: Symbol) => void) | null = null;
 
   /**
    * Optional filter for symbols this instance should handle
@@ -25,36 +27,52 @@ class VolatilityService {
     this.symbolsFilter = symbols;
   }
 
+  public setUpdateCallback(callback: (symbol: Symbol) => void) {
+    this.updateCallback = callback;
+  }
+
+  private setValue(symbol: Symbol, av: number) {
+    const dv = workingDaysCache.getDvFromAv(av);
+    const previous = this.values[symbol];
+    this.values[symbol] = { av, dv };
+    if (previous?.av !== av || previous?.dv !== dv) {
+      this.updateCallback?.(symbol);
+    }
+  }
+
+  public updateVix(symbol: Symbol, value: number) {
+    if (!NUMERIC_VIX_SYMBOLS.some((numericSymbol) => numericSymbol === symbol)) {
+      throw new Error(`VIX is not updatable for ${symbol}`);
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error('VIX must be a finite positive number');
+    }
+
+    // Discard any database read that started before this live update.
+    this.revisions.set(symbol, (this.revisions.get(symbol) ?? 0) + 1);
+    this.setValue(symbol, value);
+  }
+
+  private async refresh(symbol: Symbol) {
+    const revision = this.revisions.get(symbol) ?? 0;
+    try {
+      const av = NUMERIC_VIX_SYMBOLS.some((numericSymbol) => numericSymbol === symbol)
+        ? ((await settingsService.getVix(symbol)) as number)
+        : await getPrice(CONFIG[symbol].vix as string);
+
+      if ((this.revisions.get(symbol) ?? 0) === revision) {
+        this.setValue(symbol, av);
+      }
+    } catch (error) {
+      logger.error(`Error fetching volatility for ${symbol}:`, error);
+    }
+  }
+
   async init() {
     const symbols = this.symbolsFilter ?? (Object.keys(CONFIG) as Symbol[]);
     logger.info(`Initializing volatility service for ${symbols.length} symbols`);
 
-    for (const symbol of symbols) {
-      const isNumericVix = NUMERIC_VIX_SYMBOLS.includes(symbol as (typeof NUMERIC_VIX_SYMBOLS)[number]);
-
-      // Create the getAv function based on whether VIX is numeric or a Yahoo Finance symbol
-      const getAv = isNumericVix
-        ? // For numeric VIX: read from settings service (allows dynamic updates)
-          async () => {
-            const vix = await settingsService.getVix(symbol);
-            return vix as number;
-          }
-        : // For symbol-based VIX: fetch from Yahoo Finance
-          () => getPrice(CONFIG[symbol].vix as string);
-
-      setIntervalNow(
-        async () => {
-          try {
-            const av = await getAv();
-            const dv = workingDaysCache.getDvFromAv(av);
-            this.values[symbol] = { av, dv };
-          } catch (error) {
-            logger.error(`Error fetching volatility for ${symbol}:`, error);
-          }
-        },
-        2 * 1000 * 60
-      ); // 2 minutes
-    }
+    await Promise.all(symbols.map((symbol) => setIntervalNow(() => this.refresh(symbol), 2 * 1000 * 60)));
     logger.info('Volatility service initialized');
   }
 }

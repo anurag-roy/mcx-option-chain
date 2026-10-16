@@ -18,7 +18,7 @@ import { KiteTicker, type TickFull, type TickLtp } from 'kiteconnect-ts';
 export type OptionChainCallback = (data: Record<number, OptionChain>) => void;
 type Instrument = typeof instrumentsTable.$inferSelect;
 type DesiredOption = { instrument: Instrument; futExpiry: string; underlyingLtp: number };
-type RangeRefreshReason = 'subscribe' | 'ltp' | 'pending';
+type RangeRefreshReason = 'subscribe' | 'ltp' | 'pending' | 'volatility';
 
 interface ClientSubscription {
   ws: WSContext;
@@ -321,6 +321,12 @@ export class TickerService {
     }, this.RANGE_REFRESH_THROTTLE_MS);
 
     this.rangeRefreshTimers.set(underlying, timeout);
+  }
+
+  public refreshVolatility(underlying: Symbol) {
+    if (this.activeSdMultiplier !== null) {
+      this.refreshSymbolRange(underlying, this.activeSdMultiplier, 'volatility');
+    }
   }
 
   async init() {
