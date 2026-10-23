@@ -3,38 +3,20 @@ import type { OptionChain } from '@client/types/option-chain';
 import type { ColumnDef, RowData } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { PlusCircleIcon } from 'lucide-react';
-import type React from 'react';
 import { DataTableColumnHeader } from './column-header';
 
 // Extend TanStack Table meta to include our callback
 declare module '@tanstack/react-table' {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface TableMeta<TData extends RowData> {
-    onSelectOption?: (option: OptionChain) => void;
+    onSelectOrder?: (option: OptionChain) => void;
+    onSelectInsight?: (option: OptionChain) => void;
+    expiryRankByDate?: ReadonlyMap<string, number>;
   }
 }
 
 const green = 'bg-emerald-50/60 text-emerald-800 ring-emerald-100 dark:bg-emerald-900/10 dark:text-emerald-500';
 const red = 'bg-red-50/60 text-red-800 ring-red-100 dark:bg-red-900/10 dark:text-red-500';
-
-/**
- * Format a number in scientific notation with JSX superscripts
- * e.g., 0.002446 → "2.4460 × 10^(-3)" rendered as JSX with <sup>
- */
-export function formatScientific(value: number, decimalPlaces = 4): React.ReactNode {
-  if (value === 0) return '0';
-
-  const exponent = Math.floor(Math.log10(Math.abs(value)));
-  const coefficient = value / Math.pow(10, exponent);
-
-  const coeffStr = coefficient.toFixed(decimalPlaces);
-
-  return (
-    <>
-      {coeffStr} × 10<sup>{exponent}</sup>
-    </>
-  );
-}
 
 export const columns: ColumnDef<OptionChain>[] = [
   {
@@ -49,19 +31,38 @@ export const columns: ColumnDef<OptionChain>[] = [
     id: 'expiry',
     header: 'Expiry',
     accessorFn: (row) => row.expiry,
-    cell: ({ row }) => {
-      return <div className='p-2 pl-4'>{format(new Date(row.original.expiry), 'dd MMM')}</div>;
+    cell: ({ row, table }) => {
+      const expiryRank = table.options.meta?.expiryRankByDate?.get(row.original.expiry);
+
+      return (
+        <div
+          className={cn(
+            'p-2 pl-4',
+            expiryRank === 1 && 'bg-violet-50/60 text-violet-800 dark:bg-violet-900/20 dark:text-violet-500',
+            expiryRank === 2 && 'bg-fuchsia-50/60 text-fuchsia-800 dark:bg-fuchsia-900/20 dark:text-fuchsia-500'
+          )}
+        >
+          {format(new Date(row.original.expiry), 'dd MMM')}
+        </div>
+      );
     },
   },
   {
     id: 'strike',
     header: 'Strike',
     accessorFn: (row) => row.strike,
-    cell: ({ row }) => {
+    cell: ({ row, table }) => {
+      const label = `${row.original.strike} ${row.original.instrumentType}`;
+
       return (
-        <div className='p-2 pl-4'>
-          {row.original.strike} {row.original.instrumentType}
-        </div>
+        <button
+          type='button'
+          className='focus-visible:ring-ring flex min-h-10 w-full items-center p-2 pl-4 text-left font-medium text-blue-600 underline decoration-blue-600/50 underline-offset-4 transition-colors hover:text-blue-700 hover:decoration-blue-700 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset active:scale-[0.96] dark:text-blue-400 dark:decoration-blue-400/50 dark:hover:text-blue-300 dark:hover:decoration-blue-300'
+          onClick={() => table.options.meta?.onSelectInsight?.(row.original)}
+          aria-label={`Open Black-76 insight for ${row.original.tradingsymbol}`}
+        >
+          {label}
+        </button>
       );
     },
   },
@@ -103,7 +104,7 @@ export const columns: ColumnDef<OptionChain>[] = [
             'flex w-full cursor-pointer items-center justify-between gap-1 p-2 font-semibold tabular-nums transition-opacity hover:opacity-80',
             row.original.returnValue >= 0 ? green : red
           )}
-          onClick={() => table.options.meta?.onSelectOption?.(row.original)}
+          onClick={() => table.options.meta?.onSelectOrder?.(row.original)}
         >
           <PlusCircleIcon className='h-4 w-4 shrink-0' />
           <span className='rounded-full px-2 py-px tabular-nums ring-1 ring-gray-400 dark:ring-gray-600'>
@@ -183,34 +184,6 @@ export const columns: ColumnDef<OptionChain>[] = [
   //   ),
   // },
   {
-    id: 'addedValue',
-    header: ({ table, column }) => (
-      <DataTableColumnHeader table={table} column={column} title='AV' tooltip='Added Value (RV / |Delta|)' />
-    ),
-    accessorFn: (row) => row.addedValue,
-    cell: ({ row }) => {
-      const { addedValue } = row.original;
-
-      if (!addedValue) {
-        return (
-          <div className='bg-gray-50/60 p-2 text-center text-gray-500 dark:bg-gray-900/20 dark:text-gray-400'>N/A</div>
-        );
-      }
-
-      const valueColor =
-        addedValue >= 0
-          ? 'bg-emerald-50/60 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-500'
-          : 'bg-red-50/60 text-red-800 dark:bg-red-900/20 dark:text-red-500';
-
-      return <div className={cn('p-2 text-right font-medium', valueColor)}>{formatScientific(addedValue)}</div>;
-    },
-    sortingFn: (rowA, rowB) => {
-      const addedValueA = rowA.original.addedValue || -Infinity;
-      const addedValueB = rowB.original.addedValue || -Infinity;
-      return addedValueA - addedValueB;
-    },
-  },
-  {
     accessorKey: 'sellValue',
     header: 'Sell Value',
     cell: ({ row }) => <div className='p-2 text-right tabular-nums'>{row.original.sellValue.toFixed(2)}</div>,
@@ -226,5 +199,4 @@ export const numericCols = [
   'orderMargin',
   'delta',
   'sigmaXI',
-  'addedValue',
 ];

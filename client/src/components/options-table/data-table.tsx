@@ -9,17 +9,22 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { numericCols } from './columns';
 
 interface DataTableProps {
   columns: ColumnDef<OptionChain>[];
   data: OptionChain[];
-  onSelectOption?: (option: OptionChain) => void;
+  onSelectOrder?: (option: OptionChain) => void;
+  onSelectInsight?: (option: OptionChain) => void;
 }
 
-export const DataTable = memo(function DataTable({ columns, data, onSelectOption }: DataTableProps) {
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'addedValue', desc: true }]);
+export const DataTable = memo(function DataTable({ columns, data, onSelectOrder, onSelectInsight }: DataTableProps) {
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'delta', desc: false }]);
+  const expiryRankByDate = useMemo(
+    () => new Map([...new Set(data.map((option) => option.expiry))].sort().map((expiry, index) => [expiry, index])),
+    [data]
+  );
 
   const table = useReactTable({
     data,
@@ -31,7 +36,9 @@ export const DataTable = memo(function DataTable({ columns, data, onSelectOption
       sorting,
     },
     meta: {
-      onSelectOption,
+      onSelectOrder,
+      onSelectInsight,
+      expiryRankByDate,
     },
   });
 

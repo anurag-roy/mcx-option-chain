@@ -1,4 +1,5 @@
-import { columns, formatScientific } from '@client/components/options-table/columns';
+import { Black76InsightCard } from '@client/components/black76-insight-card';
+import { columns } from '@client/components/options-table/columns';
 import { DataTable } from '@client/components/options-table/data-table';
 import { OrderModal } from '@client/components/order-modal';
 import { Card, CardContent, CardHeader, CardTitle } from '@client/components/ui/card';
@@ -15,7 +16,7 @@ interface OptionsCardProps {
 export function OptionsCard({ name, symbols, optionChainData }: OptionsCardProps) {
   // Store only the token, not the entire option object
   const [selectedToken, setSelectedToken] = useState<number | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeModal, setActiveModal] = useState<'order' | 'insight' | null>(null);
   const { addNotification } = useNotifications();
 
   // Track the previous highest RV option
@@ -29,37 +30,6 @@ export function OptionsCard({ name, symbols, optionChainData }: OptionsCardProps
     return allOptions.filter((option) => symbols.includes(option.name)) as OptionChain[];
   }, [optionChainData, symbols]);
   const length = filteredData.length;
-
-  // Calculate highest Added Value for each distinct symbol
-  const highestAVBySymbol = useMemo(() => {
-    if (filteredData.length === 0) return [];
-
-    // Group options by their name (symbol)
-    const groupedBySymbol: Record<string, OptionChain[]> = {};
-    for (const option of filteredData) {
-      if (!groupedBySymbol[option.name]) {
-        groupedBySymbol[option.name] = [];
-      }
-      groupedBySymbol[option.name].push(option);
-    }
-
-    // Find highest AV for each symbol (including negative values)
-    const results: { symbol: string; tradingsymbol: string; addedValue: number }[] = [];
-    for (const [symbol, options] of Object.entries(groupedBySymbol)) {
-      const validOptions = options.filter((o) => o.addedValue !== 0);
-      if (validOptions.length > 0) {
-        const highest = validOptions.reduce((max, opt) => (opt.addedValue > max.addedValue ? opt : max));
-        results.push({
-          symbol,
-          tradingsymbol: highest.tradingsymbol,
-          addedValue: highest.addedValue,
-        });
-      }
-    }
-
-    // Sort by addedValue descending
-    return results.sort((a, b) => b.addedValue - a.addedValue);
-  }, [filteredData]);
 
   // Track highest Return Value and notify when it changes to a different instrument
   useEffect(() => {
@@ -89,13 +59,19 @@ export function OptionsCard({ name, symbols, optionChainData }: OptionsCardProps
     };
   }, [filteredData, addNotification]);
 
-  const handleSelectOption = useCallback((option: OptionChain) => {
+  const handleSelectOrder = useCallback((option: OptionChain) => {
     setSelectedToken(option.instrumentToken);
-    setIsModalOpen(true);
+    setActiveModal('order');
+  }, []);
+
+  const handleSelectInsight = useCallback((option: OptionChain) => {
+    setSelectedToken(option.instrumentToken);
+    setActiveModal('insight');
   }, []);
 
   const handleModalClose = useCallback((open: boolean) => {
-    setIsModalOpen(open);
+    if (open) return;
+    setActiveModal(null);
     if (!open) {
       // Keep selectedToken around briefly for close animation
       setTimeout(() => setSelectedToken(null), 200);
@@ -109,28 +85,22 @@ export function OptionsCard({ name, symbols, optionChainData }: OptionsCardProps
           <CardTitle>
             {name} ({length} {length === 1 ? 'instrument' : 'instruments'})
           </CardTitle>
-          {highestAVBySymbol.length > 0 && (
-            <div className='text-muted-foreground text-sm'>
-              <span className='font-medium'>Highest AV: </span>
-              {highestAVBySymbol.map((item, index) => (
-                <span key={item.symbol}>
-                  {index > 0 && ', '}
-                  <span className='text-foreground font-medium'>{item.tradingsymbol}</span>
-                  <span className='text-emerald-600 dark:text-emerald-400'> ({formatScientific(item.addedValue)})</span>
-                </span>
-              ))}
-            </div>
-          )}
         </CardHeader>
         <CardContent className='pt-0'>
           <div className='-mx-6 border-t'>
-            <DataTable columns={columns} data={filteredData} onSelectOption={handleSelectOption} />
+            <DataTable
+              columns={columns}
+              data={filteredData}
+              onSelectOrder={handleSelectOrder}
+              onSelectInsight={handleSelectInsight}
+            />
           </div>
         </CardContent>
       </Card>
 
-      {/* Single OrderModal instance for this card */}
-      <OrderModal option={selectedOption} open={isModalOpen} onOpenChange={handleModalClose} />
+      {/* Keep the live selection shared by the independent order and insight paths. */}
+      <OrderModal option={selectedOption} open={activeModal === 'order'} onOpenChange={handleModalClose} />
+      <Black76InsightCard option={selectedOption} open={activeModal === 'insight'} onOpenChange={handleModalClose} />
     </>
   );
 }
