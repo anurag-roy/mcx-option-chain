@@ -7,6 +7,7 @@ import { accessToken } from '@server/lib/services/accessToken';
 import { getOrderMargins } from '@server/lib/services/kite';
 import { settingsService } from '@server/lib/services/settings';
 import { volatilityService } from '@server/lib/services/volatility';
+import { calculateBlack76, calculateFuturesMicroprice } from '@server/lib/utils/black76';
 import { calculateDeltas } from '@server/lib/utils/delta';
 import { CONFIG, type Symbol } from '@server/shared/config';
 import type { OptionChain } from '@shared/types/types';
@@ -47,6 +48,7 @@ export class TickerService {
    * underlying to expiry to ltp
    */
   private futureLtps: Record<string, Record<string, number>> = {};
+  private futureReferencePrices: Record<string, Record<string, number | null>> = {};
   private optionInstrumentsBySymbol = new Map<Symbol, Map<string, Instrument[]>>();
 
   private optionChain: Record<number, OptionChain> = {};
@@ -173,6 +175,13 @@ export class TickerService {
       av: 0,
       dv: 0,
       addedValue: 0,
+      futuresReferencePrice: null,
+      black76FairPrice: null,
+      black76Difference: null,
+      black76DifferencePercent: null,
+      black76TimeToExpiry: null,
+      black76DiscountFactor: null,
+      black76Status: 'MODEL_UNAVAILABLE',
     };
   }
 
@@ -347,6 +356,10 @@ export class TickerService {
         this.futureLtps[future.name] = {};
       }
       this.futureLtps[future.name]![future.expiry] = 0;
+      if (!this.futureReferencePrices[future.name]) {
+        this.futureReferencePrices[future.name] = {};
+      }
+      this.futureReferencePrices[future.name]![future.expiry] = null;
     }
     logger.info(`Loaded futures data for ${futures.length} instruments`);
 
@@ -378,6 +391,12 @@ export class TickerService {
           const { underlying, expiry } = this.futureTokensMap[tick.instrument_token]!;
           const previousLtp = this.futureLtps[underlying]![expiry];
           this.futureLtps[underlying]![expiry] = tick.last_price;
+          if (tick.mode === 'full') {
+            const bid = tick.depth.buy[0];
+            const ask = tick.depth.sell[0];
+            this.futureReferencePrices[underlying]![expiry] =
+              bid && ask ? calculateFuturesMicroprice(bid.price, bid.quantity, ask.price, ask.quantity) : null;
+          }
           if (previousLtp !== tick.last_price) {
             this.scheduleRangeRefresh(underlying as Symbol);
           }
@@ -395,7 +414,7 @@ export class TickerService {
 
     const futureTokens = futures.map((f) => f.instrumentToken);
     this.ticker.subscribe(futureTokens);
-    this.ticker.setMode(this.ticker.modeLTP, futureTokens);
+    this.ticker.setMode(this.ticker.modeFull, futureTokens);
 
     // Update option chain
     setInterval(() => {
@@ -536,22 +555,53 @@ export class TickerService {
       instrument.sigmaX = sigmas.sigmaX;
       instrument.sigmaXI = sigmas.sigmaXI;
 
-      // Calculate delta using Black-Scholes (fresh calculation every time)
+      // Preserve the established Delta input for the legacy Added Value calculation.
       const marketMinutesTillExpiry = workingDaysCache.getMarketMinutesTillExpiry(instrument.expiry);
       const marketMinutesInLastYear = workingDaysCache.getMarketMinutesInLastYear();
       const T = marketMinutesTillExpiry / marketMinutesInLastYear;
 
-      instrument.delta = calculateDeltas(
+      const legacyDelta = calculateDeltas(
         instrument.underlyingLtp,
         instrument.strike!,
         av / 100,
         T,
         instrument.instrumentType as 'CE' | 'PE'
       );
+      instrument.delta = 0;
+
+      instrument.futuresReferencePrice = this.futureReferencePrices[instrument.name]?.[instrument.futExpiry] ?? null;
+      instrument.black76FairPrice = null;
+      instrument.black76Difference = null;
+      instrument.black76DifferencePercent = null;
+      instrument.black76TimeToExpiry = Number.isFinite(T) && T > 0 ? T : null;
+      instrument.black76DiscountFactor = null;
+      instrument.black76Status = 'MODEL_UNAVAILABLE';
+
+      if (instrument.futuresReferencePrice !== null) {
+        const result = calculateBlack76(
+          instrument.futuresReferencePrice,
+          instrument.strike!,
+          av / 100,
+          T,
+          instrument.instrumentType as 'CE' | 'PE'
+        );
+
+        if (result && result.fairPrice > 0) {
+          instrument.black76FairPrice = result.fairPrice;
+          instrument.black76DiscountFactor = result.discountFactor;
+          instrument.delta = result.delta;
+
+          if (instrument.bid > 0) {
+            instrument.black76Difference = instrument.bid - result.fairPrice;
+            instrument.black76DifferencePercent = (instrument.black76Difference / result.fairPrice) * 100;
+            instrument.black76Status = 'AVAILABLE';
+          }
+        }
+      }
 
       // Calculate addedValue (Return Value / |Delta|)
-      if (instrument.delta !== 0 && instrument.returnValue) {
-        instrument.addedValue = instrument.returnValue / Math.abs(instrument.delta);
+      if (legacyDelta !== 0 && instrument.returnValue) {
+        instrument.addedValue = instrument.returnValue / Math.abs(legacyDelta);
       } else {
         instrument.addedValue = 0;
       }

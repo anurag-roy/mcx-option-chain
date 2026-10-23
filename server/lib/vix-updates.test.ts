@@ -81,6 +81,7 @@ test('saving VIX refreshes calculations and option subscriptions without a futur
   const state = ticker as unknown as {
     ticker: { subscribe: (tokens: number[]) => void; unsubscribe: (tokens: number[]) => void; setMode: () => void };
     futureLtps: Record<string, Record<string, number>>;
+    futureReferencePrices: Record<string, Record<string, number | null>>;
     optionInstrumentsBySymbol: Map<Symbol, Map<string, Instrument[]>>;
     optionChain: Record<number, OptionChain>;
     calculateOptions: () => OptionChain[];
@@ -109,6 +110,7 @@ test('saving VIX refreshes calculations and option subscriptions without a futur
     }
   }
   state.futureLtps = { COPPER: { [futureExpiry]: 100 } };
+  state.futureReferencePrices = { COPPER: { [futureExpiry]: 100 } };
   state.optionInstrumentsBySymbol.set('COPPER', new Map([[expiry, instruments]]));
   ticker.setSymbolsFilter(['COPPER']);
   volatilityService.setUpdateCallback((symbol) => ticker.refreshVolatility(symbol));

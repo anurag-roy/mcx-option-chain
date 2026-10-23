@@ -10,6 +10,7 @@
     "start": "tsx --env-file=.env server/index.ts",
     "typecheck": "tsc --noEmit",
     "test:vix": "node --import tsx --test server/lib/vix-updates.test.ts",
+    "test:black76": "node --import tsx --test server/lib/utils/black76.test.ts",
     "format": "prettier --write \"{server,client/src}/**/*.{js,jsx,ts,tsx,css,json,md}\"",
     "db": "drizzle-kit",
     "db:seed": "tsx --env-file=.env server/scripts/seed.ts",

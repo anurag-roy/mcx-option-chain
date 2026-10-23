@@ -43,6 +43,13 @@ export type OptionChain = {
   av: number;
   dv: number;
   addedValue: number;
+  futuresReferencePrice: number | null;
+  black76FairPrice: number | null;
+  black76Difference: number | null;
+  black76DifferencePercent: number | null;
+  black76TimeToExpiry: number | null;
+  black76DiscountFactor: number | null;
+  black76Status: 'AVAILABLE' | 'MODEL_UNAVAILABLE';
 };
 
 export type OptionChainData = Record<number, OptionChain>;
